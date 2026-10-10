@@ -24,6 +24,8 @@ const GAME_SOURCES: ("installed" | "windows")[] = ["installed", "windows"];
 
 export function GamingTab({ enabled, toggleEnabled, processes, onProcessesChange, presentMonPath, onPresentMonPathChange }: GamingTabProps) {
 	const [pickerOpen, setPickerOpen] = useState(false);
+	const [missingExeApp, setMissingExeApp] = useState<string | null>(null);
+	const [manualGame, setManualGame] = useState("");
 	const [status, setStatus] = useState<GamingModeState | null>(null);
 	const [fpsStatus, setFpsStatus] = useState<string | null>(null);
 	const pickerRef = useRef<HTMLDivElement>(null);
@@ -51,10 +53,25 @@ export function GamingTab({ enabled, toggleEnabled, processes, onProcessesChange
 
 	const addGame = (app: AppInfo) => {
 		const executable = (app.executable?.trim() || app.path).split(/[\\/]/).pop()?.trim() || "";
-		if (executable && !processes.some((item) => item.toLowerCase() === executable.toLowerCase())) {
+		if (!/\.exe$/i.test(executable)) {
+			setMissingExeApp(app.name);
+		} else if (!processes.some((item) => item.toLowerCase() === executable.toLowerCase())) {
 			onProcessesChange([...processes, executable]);
+			setMissingExeApp(null);
 		}
 		setPickerOpen(false);
+	};
+
+	const addManualGame = () => {
+		const filename = manualGame.trim().split(/[\\/]/).pop()?.trim() || "";
+		if (filename) {
+			const executable = /\.exe$/i.test(filename) ? filename : `${filename}.exe`;
+			if (!processes.some((item) => item.toLowerCase() === executable.toLowerCase())) {
+				onProcessesChange([...processes, executable]);
+				setMissingExeApp(null);
+			}
+		}
+		setManualGame("");
 	};
 
 	return (
@@ -71,6 +88,24 @@ export function GamingTab({ enabled, toggleEnabled, processes, onProcessesChange
 					<button type="button" className="announcement-banner-link" onClick={() => setPickerOpen(true)}>
 						Add game
 					</button>
+				</SettingRow>
+				{missingExeApp && (
+					<p className="setting-desc" style={{ margin: "8px 14px 8px 54px" }}>
+						{missingExeApp} has no .exe. Start the game and pick it under Open windows, or type the exe name below.
+					</p>
+				)}
+				<SettingRow icon={Plus} label="Exe name" desc="Add a game by its process name">
+					<form onSubmit={(event) => { event.preventDefault(); addManualGame(); }} style={{ display: "flex", gap: 6 }}>
+						<input
+							type="text"
+							className="gaming-path-input"
+							aria-label="Game exe name"
+							placeholder="VALORANT-Win64-Shipping.exe"
+							value={manualGame}
+							onChange={(event) => setManualGame(event.target.value)}
+						/>
+						<button type="submit" className="announcement-banner-link">Add</button>
+					</form>
 				</SettingRow>
 				<SettingRow icon={FileVideo} label="PresentMon path" desc="Path to PresentMon.exe for FPS metrics">
 					<input
@@ -105,8 +140,8 @@ export function GamingTab({ enabled, toggleEnabled, processes, onProcessesChange
 				))}
 			</div>
 			<p className="setting-desc" style={{ margin: "12px 6px", lineHeight: 1.5 }}>
-				Tip: Some games start through a launcher (e.g. Valorant via Riot Client). Start the game,
-				then pick it under "Open windows".
+				Tip: For launcher games like Valorant, start the game and pick it under "Open windows",
+				or add the exe name, e.g. VALORANT-Win64-Shipping.exe.
 			</p>
 			<p className="setting-desc" style={{ margin: "12px 6px", lineHeight: 1.5 }}>
 				Needs the scheduled tasks BloomGameModeOn and BloomGameModeOff (run the setup script once).
