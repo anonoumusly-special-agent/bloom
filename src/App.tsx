@@ -15,7 +15,8 @@ import {
 	VolumeLowIcon,
 	VolumeHighIcon,
 	MusicNoteIcon,
-	HeadphonesIcon
+	HeadphonesIcon,
+	TrayIcon
 } from "./icons";
 import { CompactMediaPlayer } from "./CompactMediaPlayer";
 import { useWeather } from "./hooks/useWeather";
@@ -139,26 +140,6 @@ function WifiIcon({ enabled, connected }: { enabled: boolean; connected: boolean
 			<path d="M1.42 9a16 16 0 0 1 21.16 0" />
 			<path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
 			<line x1="12" y1="20" x2="12.01" y2="20" />
-		</svg>
-	);
-}
-
-function TrayIcon() {
-	return (
-		<svg
-			width="14"
-			height="14"
-			viewBox="0 0 24 24"
-			fill="none"
-			stroke="currentColor"
-			strokeWidth="2.5"
-			strokeLinecap="round"
-			strokeLinejoin="round"
-		>
-			<rect x="3" y="3" width="6" height="6" rx="1" />
-			<rect x="15" y="3" width="6" height="6" rx="1" />
-			<rect x="15" y="15" width="6" height="6" rx="1" />
-			<rect x="3" y="15" width="6" height="6" rx="1" />
 		</svg>
 	);
 }

@@ -71,6 +71,9 @@ export function useSettings() {
 		right: ["battery"]
 	});
 	const [dockEnabled, setDockEnabled] = useState(true);
+	const [trayCornerEnabled, setTrayCornerEnabled] = useState(
+		() => localStorage.getItem("bloom-tray-corner-enabled") !== "false"
+	);
 	const [gamingEnabled, setGamingEnabled] = useState(
 		() => localStorage.getItem("bloom-gaming-enabled") === "true"
 	);
@@ -176,6 +179,7 @@ export function useSettings() {
 			apply(getVal("bloom-volume-edge-enabled"), setVolumeEdgeEnabled, readBool);
 			apply(getVal("bloom-brightness-edge-enabled"), setBrightnessEdgeEnabled, readBool);
 			apply(getVal("bloom-dock-enabled"), setDockEnabled, readBool);
+			apply(getVal("bloom-tray-corner-enabled"), setTrayCornerEnabled, readBool);
 			apply(getVal("bloom-gaming-enabled"), setGamingEnabled, readBool);
 			setGamingProcesses(readGamingProcesses(getVal("bloom-gaming-processes")));
 			apply(getVal("bloom-dock-preview-enabled"), setDockPreviewEnabled, readBool);
@@ -237,6 +241,7 @@ export function useSettings() {
 		"bloom-notch-mode": setNotchMode,
 		"bloom-notch-edge-delay": setNotchEdgeDelay,
 		"bloom-dock-enabled": setDockEnabled,
+		"bloom-tray-corner-enabled": setTrayCornerEnabled,
 		"bloom-gaming-enabled": setGamingEnabled,
 		"bloom-gaming-processes": (value) => setGamingProcesses(readGamingProcesses(String(value))),
 		"bloom-dock-icon-only": setDockIconOnly,
@@ -493,6 +498,12 @@ export function useSettings() {
 		const next = !dockEnabled;
 		setDockEnabled(next);
 		saveSetting("bloom-dock-enabled", String(next));
+	};
+
+	const toggleTrayCorner = () => {
+		const next = !trayCornerEnabled;
+		setTrayCornerEnabled(next);
+		saveSetting("bloom-tray-corner-enabled", String(next));
 	};
 
 	const toggleGaming = () => {
@@ -823,6 +834,8 @@ export function useSettings() {
 		handleGamingProcessesChange,
 		dockEnabled,
 		toggleDock,
+		trayCornerEnabled,
+		toggleTrayCorner,
 		dockMode,
 		setDockModeValue,
 		dockPreviewEnabled,

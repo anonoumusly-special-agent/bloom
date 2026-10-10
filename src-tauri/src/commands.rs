@@ -1999,7 +1999,7 @@ pub fn open_notification_center() {
 }
 
 #[tauri::command]
-pub fn open_system_tray() {
+pub fn open_system_tray(app: AppHandle) {
     tauri::async_runtime::spawn_blocking(move || unsafe {
         use std::sync::atomic::Ordering;
         use windows::core::PCSTR;
@@ -2223,6 +2223,7 @@ pub fn open_system_tray() {
             );
         }
     });
+    crate::services::hide_tray_corner(&app);
 }
 
 #[tauri::command]

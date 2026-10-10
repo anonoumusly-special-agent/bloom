@@ -194,6 +194,8 @@ function SettingsApp() {
 						<DockTab
 							dockEnabled={settings.dockEnabled}
 							toggleDock={settings.toggleDock}
+							trayCornerEnabled={settings.trayCornerEnabled}
+							toggleTrayCorner={settings.toggleTrayCorner}
 							dockMode={settings.dockMode}
 							setDockModeValue={settings.setDockModeValue}
 							dockPreviewEnabled={settings.dockPreviewEnabled}

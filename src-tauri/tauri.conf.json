@@ -93,6 +93,21 @@
 				"skipTaskbar": true,
 				"shadow": false,
 				"visible": false
+			},
+			{
+				"label": "tray-corner",
+				"title": "Tray Corner",
+				"url": "tray-corner.html",
+				"width": 44,
+				"height": 44,
+				"decorations": false,
+				"transparent": true,
+				"resizable": false,
+				"alwaysOnTop": true,
+				"focus": false,
+				"skipTaskbar": true,
+				"shadow": false,
+				"visible": false
 			}
 		],
 		"security": {
