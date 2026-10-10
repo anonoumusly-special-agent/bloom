@@ -189,6 +189,11 @@ fn publish_state(app: &AppHandle, game: Option<String>) {
     };
     if active_changed {
         crate::services::reconcile_main_appbar(app);
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            crate::services::reassert_dock(&app);
+        });
     }
     let _ = app.emit(
         "gaming-mode",

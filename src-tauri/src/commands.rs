@@ -370,6 +370,10 @@ pub async fn change_notch_mode(app: AppHandle, mode: String) {
         if current != -1 {
             let _ = app.emit("notch-overlap", current == 1);
         }
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+            crate::services::reassert_dock(&app);
+        });
     }
 }
 

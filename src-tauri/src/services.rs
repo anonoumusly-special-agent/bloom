@@ -3663,9 +3663,27 @@ fn reposition_all_windows(app_handle: &AppHandle) {
         return;
     }
     reconcile_main_appbar(app_handle);
-    // Only reposition the dock if it's enabled in settings.
-    // Without this guard, power events (plug/unplug, wake) would re-show
-    // a dock that the user had previously disabled.
+    reassert_dock(app_handle);
+    sync_overlays(app_handle);
+    // Re-assert topmost on all windows after repositioning to recover from any z-order loss
+    if let Some(main_win) = app_handle.get_webview_window("main") {
+        if let Ok(hwnd) = main_win.hwnd() {
+            re_assert_topmost(hwnd);
+        }
+    }
+    if let Some(dock_win) = app_handle.get_webview_window("dock") {
+        if let Ok(hwnd) = dock_win.hwnd() {
+            re_assert_topmost(hwnd);
+        }
+    }
+}
+
+pub fn reassert_dock(app_handle: &AppHandle) {
+    if SHUTTING_DOWN.load(Ordering::Relaxed) {
+        return;
+    }
+    // Only reposition the dock if it's enabled in settings. Otherwise a
+    // layout change could re-show a dock the user disabled.
     let dock_enabled =
         get_setting_str(app_handle, "bloom-dock-enabled").unwrap_or_else(|| "true".to_string());
     if dock_enabled == "true" {
@@ -3680,18 +3698,6 @@ fn reposition_all_windows(app_handle: &AppHandle) {
     }
     if NATIVE_TASKBAR_HIDDEN.load(Ordering::Relaxed) {
         set_taskbar_visibility(false, false);
-    }
-    sync_overlays(app_handle);
-    // Re-assert topmost on all windows after repositioning to recover from any z-order loss
-    if let Some(main_win) = app_handle.get_webview_window("main") {
-        if let Ok(hwnd) = main_win.hwnd() {
-            re_assert_topmost(hwnd);
-        }
-    }
-    if let Some(dock_win) = app_handle.get_webview_window("dock") {
-        if let Ok(hwnd) = dock_win.hwnd() {
-            re_assert_topmost(hwnd);
-        }
     }
 }
 
