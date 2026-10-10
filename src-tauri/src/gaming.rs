@@ -179,9 +179,17 @@ fn run_task(name: &str) {
 }
 
 fn publish_state(app: &AppHandle, game: Option<String>) {
-    *ACTIVE_GAME
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner()) = game.clone();
+    let active_changed = {
+        let mut active_game = ACTIVE_GAME
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let changed = active_game.is_some() != game.is_some();
+        *active_game = game.clone();
+        changed
+    };
+    if active_changed {
+        crate::services::reconcile_main_appbar(app);
+    }
     let _ = app.emit(
         "gaming-mode",
         serde_json::json!({ "active": game.is_some(), "game": game }),

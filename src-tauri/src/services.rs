@@ -3265,6 +3265,7 @@ fn lock_main_appbar() -> std::sync::MutexGuard<'static, ()> {
 /// Apply a reservation decision to the main window. Callers must hold
 /// `MAIN_APPBAR_LOCK`.
 fn set_main_appbar_reservation(main_win: tauri::WebviewWindow, reserve: bool) {
+    let reserve = reserve && !crate::gaming::is_gaming_active();
     if reserve {
         register_appbar(main_win);
     } else if let Ok(hwnd) = main_win.hwnd() {
