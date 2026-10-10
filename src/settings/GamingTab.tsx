@@ -9,6 +9,8 @@ import { SettingRow } from "./SettingRow";
 interface GamingTabProps {
 	enabled: boolean;
 	toggleEnabled: () => void;
+	fpsCompact: boolean;
+	toggleFpsCompact: () => void;
 	processes: string[];
 	onProcessesChange: (processes: string[]) => void;
 	presentMonPath: string;
@@ -22,7 +24,7 @@ interface GamingModeState {
 
 const GAME_SOURCES: ("installed" | "windows")[] = ["installed", "windows"];
 
-export function GamingTab({ enabled, toggleEnabled, processes, onProcessesChange, presentMonPath, onPresentMonPathChange }: GamingTabProps) {
+export function GamingTab({ enabled, toggleEnabled, fpsCompact, toggleFpsCompact, processes, onProcessesChange, presentMonPath, onPresentMonPathChange }: GamingTabProps) {
 	const [pickerOpen, setPickerOpen] = useState(false);
 	const [missingExeApp, setMissingExeApp] = useState<string | null>(null);
 	const [manualGame, setManualGame] = useState("");
@@ -117,6 +119,12 @@ export function GamingTab({ enabled, toggleEnabled, processes, onProcessesChange
 						value={presentMonPath}
 						onChange={(event) => onPresentMonPathChange(event.target.value)}
 					/>
+				</SettingRow>
+				<SettingRow icon={Gamepad2} label="Compact FPS" desc="Show FPS in one row instead of temperature and VRAM">
+					<label className="toggle-switch">
+						<input type="checkbox" checked={fpsCompact} onChange={toggleFpsCompact} />
+						<span className="slider" />
+					</label>
 				</SettingRow>
 				{fpsStatus !== null && (
 					<p className="setting-desc" style={{ margin: "8px 14px 8px 54px" }}>{fpsStatus}</p>

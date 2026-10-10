@@ -830,6 +830,9 @@ function App() {
 	const [settingsMusicCompactNotch, setSettingsMusicCompactNotch] = useState(
 		() => localStorage.getItem("bloom-music-compact-notch") !== "false"
 	);
+	const [settingsFpsCompact, setSettingsFpsCompact] = useState(
+		() => localStorage.getItem("bloom-fps-compact") !== "false"
+	);
 	const [settingsVisualizerEnabled, setSettingsVisualizerEnabled] = useState(
 		() => localStorage.getItem("bloom-visualizer-enabled") !== "false"
 	);
@@ -878,6 +881,7 @@ function App() {
 				setSettingsTimerSoundEnabled(getVal("bloom-timer-sound-enabled", "true") !== "false");
 				setSettingsMusicModeEnabled(getVal("bloom-music-mode-enabled", "true") !== "false");
 				setSettingsMusicCompactNotch(getVal("bloom-music-compact-notch", "true") !== "false");
+				setSettingsFpsCompact(getVal("bloom-fps-compact", "true") !== "false");
 				const viz =
 					getVal("bloom-media-visualizer-enabled") ?? getVal("bloom-visualizer-enabled", "true");
 				setSettingsVisualizerEnabled(viz !== "false");
@@ -1016,6 +1020,7 @@ function App() {
 			"bloom-timer-sound-enabled": setSettingsTimerSoundEnabled,
 			"bloom-music-mode-enabled": setSettingsMusicModeEnabled,
 			"bloom-music-compact-notch": setSettingsMusicCompactNotch,
+			"bloom-fps-compact": setSettingsFpsCompact,
 			"bloom-media-visualizer-enabled": setSettingsVisualizerEnabled,
 			"bloom-visualizer-enabled": setSettingsVisualizerEnabled,
 			"bloom-media-album-art-enabled": setSettingsAlbumArtEnabled,
@@ -1899,6 +1904,13 @@ function App() {
 	// Music mode shows any time we have media info (playing or paused) and music mode setting is enabled
 	const isGamingView = gamingActive && !!gamingStats;
 	const isMusicMode = mediaInfo.has_media && bloomMode === "music" && settingsMusicModeEnabled && (!isGamingView || isHovered);
+	const isCompactFps = isGamingView && settingsFpsCompact && gamingStats.fpsAvg !== null;
+	const renderGamingFpsStat = (label: string, value: number | string | null) => (
+		<div className="gaming-fps-stat">
+			<span className="gaming-fps-label">{label}</span>
+			<span className="gaming-fps-value">{value}</span>
+		</div>
+	);
 
 	// Calculate width dynamically based on enabled features
 	const getDynamicWidth = () => {
@@ -1938,7 +1950,7 @@ function App() {
 		// Sized to the calendar's week-row count plus the timer's fixed content.
 		if (bloomMode === "calendar") return calendarMonthRows >= 6 ? 305 : 273;
 		if (bloomMode === "command-center") return isHovered ? 230 : 36;
-		if (isGamingView && !isMusicMode && !isHovered && gamingStats.fpsAvg !== null) return 70;
+		if (isGamingView && !isMusicMode && !isHovered && gamingStats.fpsAvg !== null && !isCompactFps) return 70;
 		if (bloomMode === "status") return 36;
 		if (isMusicMode && isHovered) {
 			const hasProgressBar = (mediaInfo.duration_ms ?? 0) > 0;
@@ -2457,17 +2469,26 @@ function App() {
 																		exit={{ opacity: 0 }}
 																		transition={{ duration: 0.2 }}
 																	>
-																		{gamingStats.gpuTemp !== null && (
-																			<div className="passive-feature gaming-stat" title="GPU Temperature">
-																				<Thermometer size={12} strokeWidth={2} />
-																				<span className="label">{gamingStats.gpuTemp}°</span>
-																			</div>
-																		)}
-																		{gamingStats.gpuLoad !== null && (
-																			<div className="passive-feature gaming-stat" title="GPU Load">
-																				<Gpu size={12} strokeWidth={2} />
-																				<span className="label">{gamingStats.gpuLoad}%</span>
-																			</div>
+																		{isCompactFps ? (
+																			<>
+																				{renderGamingFpsStat("FPS", gamingStats.fpsLive ?? "—")}
+																				{renderGamingFpsStat("AVG", gamingStats.fpsAvg)}
+																			</>
+																		) : (
+																			<>
+																				{gamingStats.gpuTemp !== null && (
+																					<div className="passive-feature gaming-stat" title="GPU Temperature">
+																						<Thermometer size={12} strokeWidth={2} />
+																						<span className="label">{gamingStats.gpuTemp}°</span>
+																					</div>
+																				)}
+																				{gamingStats.gpuLoad !== null && (
+																					<div className="passive-feature gaming-stat" title="GPU Load">
+																						<Gpu size={12} strokeWidth={2} />
+																						<span className="label">{gamingStats.gpuLoad}%</span>
+																					</div>
+																				)}
+																			</>
 																		)}
 																	</motion.div>
 																) : !isMusicMode && isHovered && statusWidgets.left.length > 0 ? (
@@ -2650,14 +2671,23 @@ function App() {
 																		exit={{ opacity: 0 }}
 																		transition={{ duration: 0.2 }}
 																	>
-																		{gamingStats.vramUsedMb !== null && gamingStats.vramTotalMb !== null && (
-																			<div className="passive-feature gaming-stat" title="GPU Memory">
-																				<MemoryStick size={12} strokeWidth={2} />
-																				<span className="label">
-																					VRAM {(gamingStats.vramUsedMb / 1024).toFixed(1)}/
-																					{parseFloat((gamingStats.vramTotalMb / 1024).toFixed(1))} GB
-																				</span>
-																			</div>
+																		{isCompactFps ? (
+																			<>
+																				{renderGamingFpsStat("1%", gamingStats.fps1Low)}
+																				{renderGamingFpsStat("FT", gamingStats.frametimeMs === null ? "—" : `${gamingStats.frametimeMs.toFixed(1)} ms`)}
+																			</>
+																		) : (
+																			<>
+																				{gamingStats.vramUsedMb !== null && gamingStats.vramTotalMb !== null && (
+																					<div className="passive-feature gaming-stat" title="GPU Memory">
+																						<MemoryStick size={12} strokeWidth={2} />
+																						<span className="label">
+																							VRAM {(gamingStats.vramUsedMb / 1024).toFixed(1)}/
+																							{parseFloat((gamingStats.vramTotalMb / 1024).toFixed(1))} GB
+																						</span>
+																					</div>
+																				)}
+																			</>
 																		)}
 																	</motion.div>
 																) : !isMusicMode && isHovered && statusWidgets.right.length > 0 ? (
@@ -2677,24 +2707,12 @@ function App() {
 													)}
 												</AnimatePresence>
 											</div>
-											{isGamingView && !isMusicMode && !isHovered && gamingStats.fpsAvg !== null && (
+											{isGamingView && !isMusicMode && !isHovered && gamingStats.fpsAvg !== null && !isCompactFps && (
 												<div className="gaming-fps-row">
-													<div className="gaming-fps-stat">
-														<span className="gaming-fps-label">FPS</span>
-														<span className="gaming-fps-value">{gamingStats.fpsLive ?? "—"}</span>
-													</div>
-													<div className="gaming-fps-stat">
-														<span className="gaming-fps-label">AVG</span>
-														<span className="gaming-fps-value">{gamingStats.fpsAvg}</span>
-													</div>
-													<div className="gaming-fps-stat">
-														<span className="gaming-fps-label">1%</span>
-														<span className="gaming-fps-value">{gamingStats.fps1Low}</span>
-													</div>
-													<div className="gaming-fps-stat">
-														<span className="gaming-fps-label">FT</span>
-														<span className="gaming-fps-value">{gamingStats.frametimeMs === null ? "—" : `${gamingStats.frametimeMs.toFixed(1)} ms`}</span>
-													</div>
+													{renderGamingFpsStat("FPS", gamingStats.fpsLive ?? "—")}
+													{renderGamingFpsStat("AVG", gamingStats.fpsAvg)}
+													{renderGamingFpsStat("1%", gamingStats.fps1Low)}
+													{renderGamingFpsStat("FT", gamingStats.frametimeMs === null ? "—" : `${gamingStats.frametimeMs.toFixed(1)} ms`)}
 												</div>
 											)}
 										</motion.div>

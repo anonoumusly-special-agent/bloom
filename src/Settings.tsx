@@ -216,6 +216,8 @@ function SettingsApp() {
 						<GamingTab
 							enabled={settings.gamingEnabled}
 							toggleEnabled={settings.toggleGaming}
+							fpsCompact={settings.fpsCompact}
+							toggleFpsCompact={settings.toggleFpsCompact}
 							processes={settings.gamingProcesses}
 							onProcessesChange={settings.handleGamingProcessesChange}
 							presentMonPath={settings.presentMonPath}

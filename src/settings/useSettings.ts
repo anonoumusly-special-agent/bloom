@@ -77,6 +77,9 @@ export function useSettings() {
 	const [gamingEnabled, setGamingEnabled] = useState(
 		() => localStorage.getItem("bloom-gaming-enabled") === "true"
 	);
+	const [fpsCompact, setFpsCompact] = useState(
+		() => localStorage.getItem("bloom-fps-compact") !== "false"
+	);
 	const [gamingProcesses, setGamingProcesses] = useState<string[]>(
 		() => readGamingProcesses(localStorage.getItem("bloom-gaming-processes"))
 	);
@@ -184,6 +187,7 @@ export function useSettings() {
 			apply(getVal("bloom-dock-enabled"), setDockEnabled, readBool);
 			apply(getVal("bloom-tray-corner-enabled"), setTrayButtonEnabled, readBool);
 			apply(getVal("bloom-gaming-enabled"), setGamingEnabled, readBool);
+			apply(getVal("bloom-fps-compact"), setFpsCompact, readBool);
 			setGamingProcesses(readGamingProcesses(getVal("bloom-gaming-processes")));
 			apply(getVal("bloom-presentmon-path"), setPresentMonPath, (v) => v);
 			apply(getVal("bloom-dock-preview-enabled"), setDockPreviewEnabled, readBool);
@@ -247,6 +251,7 @@ export function useSettings() {
 		"bloom-dock-enabled": setDockEnabled,
 		"bloom-tray-corner-enabled": setTrayButtonEnabled,
 		"bloom-gaming-enabled": setGamingEnabled,
+		"bloom-fps-compact": setFpsCompact,
 		"bloom-gaming-processes": (value) => setGamingProcesses(readGamingProcesses(String(value))),
 		"bloom-presentmon-path": (value) => setPresentMonPath(localStorage.getItem("bloom-presentmon-path") ?? String(value)),
 		"bloom-dock-icon-only": setDockIconOnly,
@@ -515,6 +520,12 @@ export function useSettings() {
 		const next = !gamingEnabled;
 		setGamingEnabled(next);
 		saveSetting("bloom-gaming-enabled", String(next));
+	};
+
+	const toggleFpsCompact = () => {
+		const next = !fpsCompact;
+		setFpsCompact(next);
+		saveSetting("bloom-fps-compact", String(next));
 	};
 
 	const handleGamingProcessesChange = (next: string[]) => {
@@ -840,6 +851,8 @@ export function useSettings() {
 		// Dock
 		gamingEnabled,
 		toggleGaming,
+		fpsCompact,
+		toggleFpsCompact,
 		gamingProcesses,
 		handleGamingProcessesChange,
 		presentMonPath,
