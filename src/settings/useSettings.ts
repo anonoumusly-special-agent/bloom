@@ -18,6 +18,15 @@ function readBool(val: string | null): boolean {
 	return val === "true";
 }
 
+function readGamingProcesses(value: string | null): string[] {
+	try {
+		const parsed: unknown = JSON.parse(value || "[]");
+		return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+	} catch {
+		return [];
+	}
+}
+
 export function useSettings() {
 	const [autostart, setAutostart] = useState(false);
 	const [weatherEnabled, setWeatherEnabled] = useState(true);
@@ -62,6 +71,12 @@ export function useSettings() {
 		right: ["battery"]
 	});
 	const [dockEnabled, setDockEnabled] = useState(true);
+	const [gamingEnabled, setGamingEnabled] = useState(
+		() => localStorage.getItem("bloom-gaming-enabled") === "true"
+	);
+	const [gamingProcesses, setGamingProcesses] = useState<string[]>(
+		() => readGamingProcesses(localStorage.getItem("bloom-gaming-processes"))
+	);
 	const [dockPreviewEnabled, setDockPreviewEnabled] = useState(true);
 	const [dockIconOnly, setDockIconOnly] = useState(
 		() => localStorage.getItem("bloom-dock-icon-only") === "true"
@@ -161,6 +176,8 @@ export function useSettings() {
 			apply(getVal("bloom-volume-edge-enabled"), setVolumeEdgeEnabled, readBool);
 			apply(getVal("bloom-brightness-edge-enabled"), setBrightnessEdgeEnabled, readBool);
 			apply(getVal("bloom-dock-enabled"), setDockEnabled, readBool);
+			apply(getVal("bloom-gaming-enabled"), setGamingEnabled, readBool);
+			setGamingProcesses(readGamingProcesses(getVal("bloom-gaming-processes")));
 			apply(getVal("bloom-dock-preview-enabled"), setDockPreviewEnabled, readBool);
 			apply(getVal("bloom-dock-icon-only"), setDockIconOnly, readBool);
 			apply(getVal("bloom-dock-separator-enabled"), setDockSeparatorEnabled, readBool);
@@ -220,6 +237,8 @@ export function useSettings() {
 		"bloom-notch-mode": setNotchMode,
 		"bloom-notch-edge-delay": setNotchEdgeDelay,
 		"bloom-dock-enabled": setDockEnabled,
+		"bloom-gaming-enabled": setGamingEnabled,
+		"bloom-gaming-processes": (value) => setGamingProcesses(readGamingProcesses(String(value))),
 		"bloom-dock-icon-only": setDockIconOnly,
 		"bloom-dock-separator-enabled": setDockSeparatorEnabled,
 		"bloom-start-icon": setStartIcon,
@@ -474,6 +493,17 @@ export function useSettings() {
 		const next = !dockEnabled;
 		setDockEnabled(next);
 		saveSetting("bloom-dock-enabled", String(next));
+	};
+
+	const toggleGaming = () => {
+		const next = !gamingEnabled;
+		setGamingEnabled(next);
+		saveSetting("bloom-gaming-enabled", String(next));
+	};
+
+	const handleGamingProcessesChange = (next: string[]) => {
+		setGamingProcesses(next);
+		saveSetting("bloom-gaming-processes", JSON.stringify(next));
 	};
 
 	const toggleDockPreview = () => {
@@ -787,6 +817,10 @@ export function useSettings() {
 		handleWidgetsChange,
 
 		// Dock
+		gamingEnabled,
+		toggleGaming,
+		gamingProcesses,
+		handleGamingProcessesChange,
 		dockEnabled,
 		toggleDock,
 		dockMode,

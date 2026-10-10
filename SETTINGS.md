@@ -30,6 +30,13 @@ Edit `settings.json` with any text editor while Bloom is running. Changes are ap
 | `bloom-dock-adaptive`           | `"true"` / `"false"`             | `"false"`   | Fixed dock only. Stretch the dock to full width like a traditional taskbar while a window is maximized, and contract back when it's restored.                                    |
 | `bloom-dock-win-number-enabled` | `"true"` / `"false"`             | `"true"`    | When the taskbar is replaced, Win+1 through Win+9 activate the matching pinned dock app (focus/minimize if running, launch otherwise) instead of the native taskbar slots.       |
 
+### Gaming
+
+| Key                      | Type                   | Default   | Description                                                                                 |
+| ------------------------ | ---------------------- | --------- | ------------------------------------------------------------------------------------------- |
+| `bloom-gaming-enabled`   | `"true"` / `"false"`   | `"false"` | Enable Gaming Mode when a selected game process is running.                                |
+| `bloom-gaming-processes` | JSON string array      | `"[]"`    | Executable file names that trigger Gaming Mode, e.g. `["VALORANT-Win64-Shipping.exe"]`. |
+
 ### Notch
 
 | Key                      | Type                             | Default   | Description                                                                                                                    |
