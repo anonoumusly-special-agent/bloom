@@ -2107,9 +2107,6 @@ const TOP_EDGE_DWELL_MS: i64 = 200;
 const TOP_EDGE_POLL_MS: u64 = 40;
 static MH_TOP_EDGE_ENTER_MS: AtomicI64 = AtomicI64::new(0);
 static MH_TOP_EDGE_ARMED: AtomicBool = AtomicBool::new(false);
-const TRAY_CORNER_BAND_PX: f64 = 8.0;
-const TRAY_CORNER_DWELL_MS: u64 = 250;
-const TRAY_CORNER_EXIT_MS: u64 = 600;
 
 /// Physical bounds `(x, y, width, height)` of the expanded per-app volume
 /// mixer (notch + panel), if it is open. The frontend reports the card in
@@ -2309,29 +2306,6 @@ fn in_top_edge_band(cursor: windows::Win32::Foundation::POINT, scale: f64) -> bo
         && cursor.x <= (mon_x + mon_w)
 }
 
-fn in_tray_corner_band(
-    cursor: windows::Win32::Foundation::POINT,
-    mon_pos: (i32, i32),
-    mon_size: (u32, u32),
-    scale: f64,
-) -> bool {
-    let right = mon_pos.0 + mon_size.0 as i32;
-    let bottom = mon_pos.1 + mon_size.1 as i32;
-    let band = (TRAY_CORNER_BAND_PX * scale) as i32;
-    cursor.x >= (right - band).max(mon_pos.0)
-        && cursor.x < right
-        && cursor.y >= (bottom - band).max(mon_pos.1)
-        && cursor.y < bottom
-}
-
-pub(crate) fn hide_tray_corner(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window("tray-corner") {
-        if window.is_visible().unwrap_or(false) && window.hide().is_ok() {
-            let _ = app.emit("tray-corner", serde_json::json!({ "visible": false }));
-        }
-    }
-}
-
 /// True once the cursor has stayed inside the top band long enough to count as
 /// a deliberate reveal. Mere contact does not arm: a pass through the top strip
 /// on the way to a maximized window's tab/title-bar controls must not peek the
@@ -2496,128 +2470,26 @@ fn update_main_interaction(
     }
 }
 
-/// Completes pending edge dwells and closes the tray corner after the cursor
-/// leaves it. The mouse hook only fires on movement, so stationary cursors
-/// need this watchdog.
+/// Completes a pending top-edge dwell while the cursor is stationary. The mouse
+/// hook only fires on movement, so without this an intentional "rest on the top
+/// edge" gesture would never arm.
 fn setup_top_edge_watchdog(app_handle: AppHandle) {
-    std::thread::spawn(move || {
-        let mut corner_enter: Option<Instant> = None;
-        let mut corner_outside: Option<Instant> = None;
-        let mut corner_triggered = false;
-        loop {
-            std::thread::sleep(Duration::from_millis(TOP_EDGE_POLL_MS));
-            if SHUTTING_DOWN.load(Ordering::Relaxed) {
-                continue;
-            }
-            let capture_active = CAPTURE_UI_ACTIVE.load(Ordering::Relaxed);
-            let enabled = get_setting_str(&app_handle, "bloom-tray-corner-enabled")
-                .unwrap_or_else(|| "true".to_string())
-                == "true";
-            let tray_allowed = !capture_active && enabled && !crate::gaming::is_gaming_active();
-            if !tray_allowed {
-                hide_tray_corner(&app_handle);
-                corner_enter = None;
-                corner_outside = None;
-                corner_triggered = false;
-            }
-            let top_pending = !capture_active
-                && MH_TOP_EDGE_ENTER_MS.load(Ordering::Relaxed) != 0
-                && !MH_TOP_EDGE_ARMED.load(Ordering::Relaxed);
-            if !top_pending && !tray_allowed {
-                continue;
-            }
-            let mut pt = windows::Win32::Foundation::POINT::default();
-            if unsafe { windows::Win32::UI::WindowsAndMessaging::GetCursorPos(&mut pt) }.is_err() {
-                continue;
-            }
-            if top_pending {
-                let fg_fs = CURRENT_FOREGROUND_FULLSCREEN.load(Ordering::Relaxed);
-                update_main_interaction(&app_handle, pt, now_ms(), fg_fs);
-            }
-            if !tray_allowed {
-                continue;
-            }
-            let (Some(window), Ok(Some(monitor))) = (
-                app_handle.get_webview_window("tray-corner"),
-                app_handle.primary_monitor(),
-            ) else {
-                continue;
-            };
-            let pos = monitor.position();
-            let size = monitor.size();
-            let in_corner = in_tray_corner_band(
-                pt,
-                (pos.x, pos.y),
-                (size.width, size.height),
-                monitor.scale_factor(),
-            );
-            let now = Instant::now();
-            if in_corner {
-                if corner_enter.is_none() {
-                    corner_enter = Some(now);
-                }
-            } else {
-                corner_enter = None;
-                // A click hides the window; require a fresh corner entry before reopening.
-                corner_triggered = false;
-            }
-
-            if window.is_visible().unwrap_or(false) {
-                if let (Ok(win_pos), Ok(win_size)) = (window.outer_position(), window.outer_size()) {
-                    let inside = pt.x >= win_pos.x
-                        && pt.x < win_pos.x + win_size.width as i32
-                        && pt.y >= win_pos.y
-                        && pt.y < win_pos.y + win_size.height as i32;
-                    if inside {
-                        corner_outside = None;
-                    } else if now.duration_since(*corner_outside.get_or_insert(now))
-                        >= Duration::from_millis(TRAY_CORNER_EXIT_MS)
-                    {
-                        hide_tray_corner(&app_handle);
-                        corner_outside = None;
-                    }
-                }
-            } else {
-                corner_outside = None;
-                if in_corner
-                    && !corner_triggered
-                    && corner_enter.is_some_and(|entered| {
-                        now.duration_since(entered) >= Duration::from_millis(TRAY_CORNER_DWELL_MS)
-                    })
-                {
-                    if let (Ok(hwnd), Ok(win_size)) = (window.hwnd(), window.outer_size()) {
-                        if win_size.width > 0 && win_size.height > 0 {
-                            use windows::Win32::UI::WindowsAndMessaging::{
-                                SetWindowPos, ShowWindow, SWP_FRAMECHANGED, SWP_NOACTIVATE,
-                                SWP_NOZORDER, SW_SHOWNOACTIVATE,
-                            };
-                            let positioned = unsafe {
-                                SetWindowPos(
-                                    hwnd,
-                                    None,
-                                    pos.x + size.width as i32 - win_size.width as i32,
-                                    pos.y + size.height as i32 - win_size.height as i32,
-                                    win_size.width as i32,
-                                    win_size.height as i32,
-                                    SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
-                                )
-                            };
-                            if positioned.is_ok() {
-                                re_assert_topmost(hwnd);
-                                let _ = unsafe { ShowWindow(hwnd, SW_SHOWNOACTIVATE) };
-                                if window.is_visible().unwrap_or(false) {
-                                    corner_triggered = true;
-                                    let _ = app_handle.emit(
-                                        "tray-corner",
-                                        serde_json::json!({ "visible": true }),
-                                    );
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+    std::thread::spawn(move || loop {
+        std::thread::sleep(Duration::from_millis(TOP_EDGE_POLL_MS));
+        if CAPTURE_UI_ACTIVE.load(Ordering::Relaxed) || SHUTTING_DOWN.load(Ordering::Relaxed) {
+            continue;
         }
+        if MH_TOP_EDGE_ENTER_MS.load(Ordering::Relaxed) == 0
+            || MH_TOP_EDGE_ARMED.load(Ordering::Relaxed)
+        {
+            continue;
+        }
+        let mut pt = windows::Win32::Foundation::POINT::default();
+        if unsafe { windows::Win32::UI::WindowsAndMessaging::GetCursorPos(&mut pt) }.is_err() {
+            continue;
+        }
+        let fg_fs = CURRENT_FOREGROUND_FULLSCREEN.load(Ordering::Relaxed);
+        update_main_interaction(&app_handle, pt, now_ms(), fg_fs);
     });
 }
 
@@ -4076,19 +3948,8 @@ fn recover_from_webview_failure(handle: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::{
-        in_tray_corner_band, is_helper_name, is_launchable_entry,
-        notch_mode_reserves_work_area, win_number_index,
+        is_helper_name, is_launchable_entry, notch_mode_reserves_work_area, win_number_index,
     };
-
-    #[test]
-    fn tray_corner_band_stays_on_primary_monitor() {
-        use windows::Win32::Foundation::POINT;
-        let monitor = ((-1920, 0), (1920, 1080));
-        assert!(in_tray_corner_band(POINT { x: -1, y: 1079 }, monitor.0, monitor.1, 1.25));
-        assert!(!in_tray_corner_band(POINT { x: -11, y: 1079 }, monitor.0, monitor.1, 1.25));
-        assert!(!in_tray_corner_band(POINT { x: 0, y: 1079 }, monitor.0, monitor.1, 1.25));
-        assert!(!in_tray_corner_band(POINT { x: -1, y: 1080 }, monitor.0, monitor.1, 1.25));
-    }
 
     #[test]
     fn win_number_maps_top_row_digits_only() {

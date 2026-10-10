@@ -39,8 +39,8 @@ const startIconTileStyle = (active: boolean): CSSProperties => ({
 interface DockTabProps {
 	dockEnabled: boolean;
 	toggleDock: () => void;
-	trayCornerEnabled: boolean;
-	toggleTrayCorner: () => void;
+	trayButtonEnabled: boolean;
+	toggleTrayButton: () => void;
 	dockMode: string;
 	setDockModeValue: (mode: string) => void;
 	dockPreviewEnabled: boolean;
@@ -60,8 +60,8 @@ interface DockTabProps {
 export function DockTab({
 	dockEnabled,
 	toggleDock,
-	trayCornerEnabled,
-	toggleTrayCorner,
+	trayButtonEnabled,
+	toggleTrayButton,
 	dockMode,
 	setDockModeValue,
 	dockPreviewEnabled,
@@ -101,11 +101,11 @@ export function DockTab({
 
 				<SettingRow
 					icon={Grid2X2}
-					label="System Tray Corner"
-					desc="Show a tray button when the pointer reaches the bottom-right corner"
+					label="Tray Button at Right Edge"
+					desc="Show with the brightness slider at the right screen edge"
 				>
 					<label className="toggle-switch">
-						<input type="checkbox" checked={trayCornerEnabled} onChange={toggleTrayCorner} />
+						<input type="checkbox" checked={trayButtonEnabled} onChange={toggleTrayButton} />
 						<span className="slider"></span>
 					</label>
 				</SettingRow>

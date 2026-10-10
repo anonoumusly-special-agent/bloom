@@ -528,6 +528,10 @@ body,
 	margin-top: 4px;
 }
 
+.brightness-notch.with-tray-button .brightness-notch-bar {
+	height: 92px;
+}
+
 .brightness-notch-fill {
 	position: absolute;
 	bottom: 0;
@@ -547,6 +551,29 @@ body,
 	margin-top: 10px;
 }
 
+.brightness-notch-tray-button {
+	width: 28px;
+	height: 28px;
+	margin-top: 6px;
+	border: 1px solid var(--bloom-border, rgba(255, 255, 255, 0.1));
+	border-radius: 50%;
+	background: rgba(255, 255, 255, 0.08);
+	color: var(--bloom-text, white);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+}
+
+.brightness-notch-tray-button:hover {
+	background: rgba(255, 255, 255, 0.18);
+}
+
+.brightness-notch-tray-button:focus-visible {
+	outline: 2px solid var(--bloom-text, white);
+	outline-offset: 1px;
+}
+
 .brightness-icon-container {
 	width: 20px;
 	height: 20px;
@@ -560,4 +587,12 @@ body,
 .light-mode .volume-notch-bar,
 .light-mode .brightness-notch-bar {
 	background: rgba(0, 0, 0, 0.12);
+}
+
+.light-mode .brightness-notch-tray-button {
+	background: rgba(0, 0, 0, 0.06);
+}
+
+.light-mode .brightness-notch-tray-button:hover {
+	background: rgba(0, 0, 0, 0.14);
 }
