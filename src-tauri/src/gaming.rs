@@ -117,6 +117,7 @@ pub fn setup_gaming_mode(app: AppHandle) {
                     "gpuLoad": gpu_load,
                     "vramUsedMb": vram_used_mb,
                     "vramTotalMb": vram_total_mb,
+                    "fpsLive": frametime_ms.filter(|&ft| ft > 0.0).map(|ft| (1000.0 / ft).round()),
                     "fpsAvg": fps_avg.map(f64::round),
                     "fps1Low": fps_1_low.map(f64::round),
                     "frametimeMs": frametime_ms.map(|value| (value * 10.0).round() / 10.0),

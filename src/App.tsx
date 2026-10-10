@@ -367,6 +367,7 @@ interface GamingStats {
 	gpuLoad: number | null;
 	vramUsedMb: number | null;
 	vramTotalMb: number | null;
+	fpsLive: number | null;
 	fpsAvg: number | null;
 	fps1Low: number | null;
 	frametimeMs: number | null;
@@ -2679,6 +2680,10 @@ function App() {
 											{isGamingView && !isMusicMode && !isHovered && gamingStats.fpsAvg !== null && (
 												<div className="gaming-fps-row">
 													<div className="gaming-fps-stat">
+														<span className="gaming-fps-label">FPS</span>
+														<span className="gaming-fps-value">{gamingStats.fpsLive ?? "—"}</span>
+													</div>
+													<div className="gaming-fps-stat">
 														<span className="gaming-fps-label">AVG</span>
 														<span className="gaming-fps-value">{gamingStats.fpsAvg}</span>
 													</div>
@@ -2688,7 +2693,7 @@ function App() {
 													</div>
 													<div className="gaming-fps-stat">
 														<span className="gaming-fps-label">FT</span>
-														<span className="gaming-fps-value">{gamingStats.frametimeMs} ms</span>
+														<span className="gaming-fps-value">{gamingStats.frametimeMs === null ? "—" : `${gamingStats.frametimeMs.toFixed(1)} ms`}</span>
 													</div>
 												</div>
 											)}
