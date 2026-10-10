@@ -71,4 +71,4 @@ image = "0.25"
 tauri-plugin-drag = "2.1.1"
 tauri-plugin-dialog = "2"
 rustfft = "6"
-
+nvml-wrapper = "0.13"

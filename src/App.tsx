@@ -27,6 +27,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import type { WidgetConfig } from "./components/StatusWidgetConfig";
 import {
 	Cpu,
+	Thermometer,
 	MemoryStick,
 	HardDrive,
 	ArrowUpDown,
@@ -374,6 +375,18 @@ interface MediaInfo {
 	position_updated_at?: number;
 }
 
+interface GamingModeState {
+	active: boolean;
+	game: string | null;
+}
+
+interface GamingStats {
+	gpuTemp: number | null;
+	gpuLoad: number | null;
+	vramUsedMb: number | null;
+	vramTotalMb: number | null;
+}
+
 interface WifiStatus {
 	enabled: boolean;
 	connected: boolean;
@@ -541,11 +554,45 @@ function App() {
 		left: ["weather"],
 		right: ["battery"]
 	});
+	const [gamingActive, setGamingActive] = useState(false);
+	const [gamingStats, setGamingStats] = useState<GamingStats | null>(null);
 
 	const [windowLabel, setWindowLabel] = useState<string>("");
 	useEffect(() => {
 		setWindowLabel(getCurrentWebviewWindow().label);
 	}, []);
+	useEffect(() => {
+		if (windowLabel !== "main") return;
+
+		let subscribed = true;
+		let hasModeEvent = false;
+		let gameActive = false;
+		const applyMode = (state: GamingModeState) => {
+			gameActive = state.active;
+			setGamingActive(state.active);
+			setGamingStats(null);
+		};
+		const unlistenMode = listen<GamingModeState>("gaming-mode", (event) => {
+			if (!subscribed) return;
+			hasModeEvent = true;
+			applyMode(event.payload);
+		});
+		const unlistenStats = listen<GamingStats>("gaming-stats", (event) => {
+			if (subscribed && gameActive) setGamingStats(event.payload);
+		});
+		unlistenMode
+			.then(() => invoke<GamingModeState>("get_gaming_mode_state"))
+			.then((state) => {
+				if (subscribed && !hasModeEvent) applyMode(state);
+			})
+			.catch(console.error);
+
+		return () => {
+			subscribed = false;
+			unlistenMode.then((stop) => stop()).catch(console.error);
+			unlistenStats.then((stop) => stop()).catch(console.error);
+		};
+	}, [windowLabel]);
 
 	// Update state
 	const [updateAvailable, setUpdateAvailable] = useState(false);
@@ -631,6 +678,7 @@ function App() {
 	const isAnyInteraction = isHovered || isNotchHovered || isEdgeHovered;
 	const isHidden =
 		!startupAnimating &&
+		!gamingActive &&
 		((notchMode === "smart" && isOverlapped && interactionState === "none") ||
 			(notchMode === "peek" && interactionState === "none" && !eventPeek));
 
@@ -1869,6 +1917,7 @@ function App() {
 		if (bloomMode === "announcement" && announcement && !announcementDismissed) return 380;
 		if (isCalendarMode) return 480;
 		if (bloomMode === "command-center" && isHovered) return 350;
+		if (gamingActive && gamingStats && !isMusicMode) return 350;
 		if (bloomMode === "status" && isHovered) {
 			const totalWidgets = statusWidgets.left.length + statusWidgets.right.length;
 			return Math.min(200 + totalWidgets * 50, 380);
@@ -2345,7 +2394,8 @@ function App() {
 											<div className="main-row">
 												<AnimatePresence mode="wait">
 													{(showPowerPulse || showLowBatteryPulse || showUpdatePulse) &&
-													!isHovered ? (
+													!isHovered &&
+													!(gamingActive && gamingStats && !isMusicMode) ? (
 														showUpdatePulse ? (
 															<motion.div
 																key="update-pulse-view"
@@ -2409,6 +2459,28 @@ function App() {
 																			</motion.div>
 																		)}
 																	</AnimatePresence>
+																) : !isMusicMode && gamingActive && gamingStats ? (
+																	<motion.div
+																		key="gaming-stats"
+																		className="passive-features-group"
+																		initial={{ opacity: 0 }}
+																		animate={{ opacity: 1 }}
+																		exit={{ opacity: 0 }}
+																		transition={{ duration: 0.2 }}
+																	>
+																		{gamingStats.gpuTemp !== null && (
+																			<div className="passive-feature" title="GPU Temperature">
+																				<Thermometer size={12} strokeWidth={2} />
+																				<span className="label">{gamingStats.gpuTemp}°</span>
+																			</div>
+																		)}
+																		{gamingStats.gpuLoad !== null && (
+																			<div className="passive-feature" title="GPU Load">
+																				<Cpu size={12} strokeWidth={2} />
+																				<span className="label">{gamingStats.gpuLoad}%</span>
+																			</div>
+																		)}
+																	</motion.div>
 																) : !isMusicMode && isHovered && statusWidgets.left.length > 0 ? (
 																	<motion.div
 																		key="left-widgets"
@@ -2580,6 +2652,25 @@ function App() {
 																			</button>
 																		</motion.div>
 																	</AnimatePresence>
+																) : !isMusicMode && gamingActive && gamingStats ? (
+																	<motion.div
+																		key="gaming-stats"
+																		className="passive-features-group"
+																		initial={{ opacity: 0 }}
+																		animate={{ opacity: 1 }}
+																		exit={{ opacity: 0 }}
+																		transition={{ duration: 0.2 }}
+																	>
+																		{gamingStats.vramUsedMb !== null && gamingStats.vramTotalMb !== null && (
+																			<div className="passive-feature" title="GPU Memory">
+																				<MemoryStick size={12} strokeWidth={2} />
+																				<span className="label">
+																					{(gamingStats.vramUsedMb / 1024).toFixed(1)}/
+																					{parseFloat((gamingStats.vramTotalMb / 1024).toFixed(1))} GB
+																				</span>
+																			</div>
+																		)}
+																	</motion.div>
 																) : !isMusicMode && isHovered && statusWidgets.right.length > 0 ? (
 																	<motion.div
 																		key="right-widgets"

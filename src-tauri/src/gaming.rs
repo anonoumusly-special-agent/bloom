@@ -1,8 +1,10 @@
 use std::os::windows::process::CommandExt;
 use std::process::Command;
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
+use nvml_wrapper::enum_wrappers::device::TemperatureSensor;
+use nvml_wrapper::Nvml;
 use tauri::{AppHandle, Emitter};
 use windows::Win32::Foundation::{CloseHandle, GetLastError, ERROR_NO_MORE_FILES};
 use windows::Win32::System::Diagnostics::ToolHelp::{
@@ -13,6 +15,7 @@ use windows::Win32::System::Diagnostics::ToolHelp::{
 static ACTIVE_GAME: Mutex<Option<String>> = Mutex::new(None);
 
 pub fn setup_gaming_mode(app: AppHandle) {
+    let stats_app = app.clone();
     std::thread::spawn(move || {
         let mut active_game: Option<String> = None;
         loop {
@@ -56,6 +59,62 @@ pub fn setup_gaming_mode(app: AppHandle) {
             std::thread::sleep(Duration::from_secs(2));
         }
     });
+
+    std::thread::spawn(move || {
+        let mut nvml = None;
+        let mut last_init_attempt: Option<Instant> = None;
+        let mut logged_init_failure = false;
+
+        loop {
+            if ACTIVE_GAME
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .is_none()
+            {
+                std::thread::sleep(Duration::from_secs(1));
+                continue;
+            }
+
+            if nvml.is_none() && nvml_init_due(last_init_attempt) {
+                last_init_attempt = Some(Instant::now());
+                match Nvml::init() {
+                    Ok(instance) => nvml = Some(instance),
+                    Err(error) if !logged_init_failure => {
+                        eprintln!("Failed to initialize NVIDIA monitoring: {error}");
+                        logged_init_failure = true;
+                    }
+                    Err(_) => {}
+                }
+            }
+
+            let (gpu_temp, gpu_load, vram_used_mb, vram_total_mb) =
+                if let Some(device) = nvml.as_ref().and_then(|nvml| nvml.device_by_index(0).ok()) {
+                    let memory = device.memory_info().ok();
+                    (
+                        device.temperature(TemperatureSensor::Gpu).ok(),
+                        device.utilization_rates().ok().map(|rates| rates.gpu),
+                        memory.as_ref().map(|info| info.used / 1_048_576),
+                        memory.as_ref().map(|info| info.total / 1_048_576),
+                    )
+                } else {
+                    (None, None, None, None)
+                };
+            let _ = stats_app.emit(
+                "gaming-stats",
+                serde_json::json!({
+                    "gpuTemp": gpu_temp,
+                    "gpuLoad": gpu_load,
+                    "vramUsedMb": vram_used_mb,
+                    "vramTotalMb": vram_total_mb,
+                }),
+            );
+            std::thread::sleep(Duration::from_secs(1));
+        }
+    });
+}
+
+fn nvml_init_due(last_attempt: Option<Instant>) -> bool {
+    last_attempt.map_or(true, |attempt| attempt.elapsed() >= Duration::from_secs(60))
 }
 
 fn running_processes() -> windows::core::Result<Vec<String>> {
@@ -133,7 +192,15 @@ pub fn get_gaming_mode_state() -> serde_json::Value {
 
 #[cfg(test)]
 mod tests {
-    use super::contains_exe;
+    use super::{contains_exe, nvml_init_due};
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn nvml_init_retries_after_one_minute() {
+        assert!(nvml_init_due(None));
+        assert!(!nvml_init_due(Some(Instant::now())));
+        assert!(nvml_init_due(Some(Instant::now() - Duration::from_secs(60))));
+    }
 
     #[test]
     fn matches_exe_name_without_case() {
