@@ -1911,14 +1911,15 @@ function App() {
 	};
 
 	// Music mode shows any time we have media info (playing or paused) and music mode setting is enabled
-	const isMusicMode = mediaInfo.has_media && bloomMode === "music" && settingsMusicModeEnabled;
+	const isGamingView = gamingActive && !!gamingStats;
+	const isMusicMode = mediaInfo.has_media && bloomMode === "music" && settingsMusicModeEnabled && (!isGamingView || isHovered);
 
 	// Calculate width dynamically based on enabled features
 	const getDynamicWidth = () => {
 		if (bloomMode === "announcement" && announcement && !announcementDismissed) return 380;
 		if (isCalendarMode) return 480;
 		if (bloomMode === "command-center" && isHovered) return 350;
-		if (gamingActive && gamingStats && !isMusicMode) return 350;
+		if (isGamingView && !isMusicMode) return 350;
 		if (bloomMode === "status" && isHovered) {
 			const totalWidgets = statusWidgets.left.length + statusWidgets.right.length;
 			return Math.min(200 + totalWidgets * 50, 380);
@@ -2396,7 +2397,7 @@ function App() {
 												<AnimatePresence mode="wait">
 													{(showPowerPulse || showLowBatteryPulse || showUpdatePulse) &&
 													!isHovered &&
-													!(gamingActive && gamingStats && !isMusicMode) ? (
+													!(isGamingView && !isMusicMode) ? (
 														showUpdatePulse ? (
 															<motion.div
 																key="update-pulse-view"
@@ -2460,7 +2461,7 @@ function App() {
 																			</motion.div>
 																		)}
 																	</AnimatePresence>
-																) : !isMusicMode && gamingActive && gamingStats ? (
+																) : isGamingView && !isMusicMode ? (
 																	<motion.div
 																		key="gaming-stats"
 																		className="passive-features-group"
@@ -2653,7 +2654,7 @@ function App() {
 																			</button>
 																		</motion.div>
 																	</AnimatePresence>
-																) : !isMusicMode && gamingActive && gamingStats ? (
+																) : isGamingView && !isMusicMode ? (
 																	<motion.div
 																		key="gaming-stats"
 																		className="passive-features-group"
