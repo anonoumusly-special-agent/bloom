@@ -1691,10 +1691,11 @@ pub fn setup_system_worker(app_handle: AppHandle) -> Sender<SystemCommand> {
                 }
 
                 // Update full-screen visibility (hides TopBar/Corners)
-                if current_is_fs && last_visible {
+                let hide_for_fs = current_is_fs && !crate::gaming::is_gaming_active();
+                if hide_for_fs && last_visible {
                     let _ = tx_clone.send(SystemCommand::ToggleVisibility(false));
                     last_visible = false;
-                } else if !current_is_fs && !last_visible {
+                } else if !hide_for_fs && !last_visible {
                     let _ = tx_clone.send(SystemCommand::ToggleVisibility(true));
                     last_visible = true;
                 }

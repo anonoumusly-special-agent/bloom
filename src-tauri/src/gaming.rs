@@ -14,6 +14,13 @@ use windows::Win32::System::Diagnostics::ToolHelp::{
 
 static ACTIVE_GAME: Mutex<Option<String>> = Mutex::new(None);
 
+pub fn is_gaming_active() -> bool {
+    ACTIVE_GAME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .is_some()
+}
+
 pub fn setup_gaming_mode(app: AppHandle) {
     let stats_app = app.clone();
     std::thread::spawn(move || {
