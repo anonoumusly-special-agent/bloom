@@ -27,6 +27,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import type { WidgetConfig } from "./components/StatusWidgetConfig";
 import {
 	Cpu,
+	Gpu,
 	Thermometer,
 	MemoryStick,
 	HardDrive,
@@ -2469,14 +2470,14 @@ function App() {
 																		transition={{ duration: 0.2 }}
 																	>
 																		{gamingStats.gpuTemp !== null && (
-																			<div className="passive-feature" title="GPU Temperature">
+																			<div className="passive-feature gaming-stat" title="GPU Temperature">
 																				<Thermometer size={12} strokeWidth={2} />
 																				<span className="label">{gamingStats.gpuTemp}°</span>
 																			</div>
 																		)}
 																		{gamingStats.gpuLoad !== null && (
-																			<div className="passive-feature" title="GPU Load">
-																				<Cpu size={12} strokeWidth={2} />
+																			<div className="passive-feature gaming-stat" title="GPU Load">
+																				<Gpu size={12} strokeWidth={2} />
 																				<span className="label">{gamingStats.gpuLoad}%</span>
 																			</div>
 																		)}
@@ -2662,10 +2663,10 @@ function App() {
 																		transition={{ duration: 0.2 }}
 																	>
 																		{gamingStats.vramUsedMb !== null && gamingStats.vramTotalMb !== null && (
-																			<div className="passive-feature" title="GPU Memory">
+																			<div className="passive-feature gaming-stat" title="GPU Memory">
 																				<MemoryStick size={12} strokeWidth={2} />
 																				<span className="label">
-																					{(gamingStats.vramUsedMb / 1024).toFixed(1)}/
+																					VRAM {(gamingStats.vramUsedMb / 1024).toFixed(1)}/
 																					{parseFloat((gamingStats.vramTotalMb / 1024).toFixed(1))} GB
 																				</span>
 																			</div>

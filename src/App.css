@@ -393,6 +393,10 @@ img {
 	/* Optical adjustment for Inter font baseline */
 }
 
+.passive-feature.gaming-stat .label {
+	font-variant-numeric: tabular-nums;
+}
+
 .update-dot {
 	position: absolute;
 	top: 100%;
