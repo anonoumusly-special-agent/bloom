@@ -37,6 +37,7 @@ Edit `settings.json` with any text editor while Bloom is running. Changes are ap
 | ------------------------ | ---------------------- | --------- | ------------------------------------------------------------------------------------------- |
 | `bloom-gaming-enabled`   | `"true"` / `"false"`   | `"false"` | Enable Gaming Mode when a selected game process is running.                                |
 | `bloom-gaming-processes` | JSON string array      | `"[]"`    | Executable file names that trigger Gaming Mode, e.g. `["VALORANT-Win64-Shipping.exe"]`. |
+| `bloom-presentmon-path`  | file path string       | `""`      | Path to PresentMon.exe for FPS metrics in Gaming Mode.                                    |
 
 ### Notch
 

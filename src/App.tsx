@@ -367,6 +367,10 @@ interface GamingStats {
 	gpuLoad: number | null;
 	vramUsedMb: number | null;
 	vramTotalMb: number | null;
+	fpsAvg: number | null;
+	fps1Low: number | null;
+	frametimeMs: number | null;
+	fpsStatus?: string | null;
 }
 
 interface WifiStatus {
@@ -1933,6 +1937,7 @@ function App() {
 		// Sized to the calendar's week-row count plus the timer's fixed content.
 		if (bloomMode === "calendar") return calendarMonthRows >= 6 ? 305 : 273;
 		if (bloomMode === "command-center") return isHovered ? 230 : 36;
+		if (isGamingView && !isMusicMode && !isHovered && gamingStats.fpsAvg !== null) return 70;
 		if (bloomMode === "status") return 36;
 		if (isMusicMode && isHovered) {
 			const hasProgressBar = (mediaInfo.duration_ms ?? 0) > 0;
@@ -2671,6 +2676,22 @@ function App() {
 													)}
 												</AnimatePresence>
 											</div>
+											{isGamingView && !isMusicMode && !isHovered && gamingStats.fpsAvg !== null && (
+												<div className="gaming-fps-row">
+													<div className="gaming-fps-stat">
+														<span className="gaming-fps-label">AVG</span>
+														<span className="gaming-fps-value">{gamingStats.fpsAvg}</span>
+													</div>
+													<div className="gaming-fps-stat">
+														<span className="gaming-fps-label">1%</span>
+														<span className="gaming-fps-value">{gamingStats.fps1Low}</span>
+													</div>
+													<div className="gaming-fps-stat">
+														<span className="gaming-fps-label">FT</span>
+														<span className="gaming-fps-value">{gamingStats.frametimeMs} ms</span>
+													</div>
+												</div>
+											)}
 										</motion.div>
 									)}
 								</AnimatePresence>

@@ -518,6 +518,17 @@ input:checked + .slider:before {
 	margin: 4px 14px 4px 54px;
 }
 
+.gaming-path-input {
+	width: 180px;
+	min-width: 0;
+	background: transparent;
+	border: 1px solid var(--bloom-border, rgba(255, 255, 255, 0.15));
+	border-radius: 6px;
+	padding: 6px;
+	color: var(--bloom-text, #fff);
+	font-size: 12px;
+}
+
 .city-input-row {
 	position: relative;
 	display: flex;

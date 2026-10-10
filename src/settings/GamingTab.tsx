@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Gamepad2, Plus, X } from "lucide-react";
+import { FileVideo, Gamepad2, Plus, X } from "lucide-react";
 import { AppPicker } from "../components/AppPicker";
 import type { AppInfo } from "../dockApps";
 import { SettingRow } from "./SettingRow";
@@ -11,6 +11,8 @@ interface GamingTabProps {
 	toggleEnabled: () => void;
 	processes: string[];
 	onProcessesChange: (processes: string[]) => void;
+	presentMonPath: string;
+	onPresentMonPathChange: (path: string) => void;
 }
 
 interface GamingModeState {
@@ -20,15 +22,19 @@ interface GamingModeState {
 
 const GAME_SOURCES: ("installed" | "windows")[] = ["installed", "windows"];
 
-export function GamingTab({ enabled, toggleEnabled, processes, onProcessesChange }: GamingTabProps) {
+export function GamingTab({ enabled, toggleEnabled, processes, onProcessesChange, presentMonPath, onPresentMonPathChange }: GamingTabProps) {
 	const [pickerOpen, setPickerOpen] = useState(false);
 	const [status, setStatus] = useState<GamingModeState | null>(null);
+	const [fpsStatus, setFpsStatus] = useState<string | null>(null);
 	const pickerRef = useRef<HTMLDivElement>(null);
 
 	useEffect(() => {
 		let active = true;
 		const unlisten = listen<GamingModeState>("gaming-mode", (event) => {
 			if (active) setStatus(event.payload);
+		});
+		const unlistenStats = listen<{ fpsStatus: string | null }>("gaming-stats", (event) => {
+			if (active) setFpsStatus(event.payload.fpsStatus);
 		});
 		unlisten
 			.then(() => invoke<GamingModeState>("get_gaming_mode_state"))
@@ -39,6 +45,7 @@ export function GamingTab({ enabled, toggleEnabled, processes, onProcessesChange
 		return () => {
 			active = false;
 			unlisten.then((stop) => stop()).catch(console.error);
+			unlistenStats.then((stop) => stop()).catch(console.error);
 		};
 	}, []);
 
@@ -65,6 +72,20 @@ export function GamingTab({ enabled, toggleEnabled, processes, onProcessesChange
 						Add game
 					</button>
 				</SettingRow>
+				<SettingRow icon={FileVideo} label="PresentMon path" desc="Path to PresentMon.exe for FPS metrics">
+					<input
+						type="text"
+						name="bloom-presentmon-path"
+						className="gaming-path-input"
+						aria-label="PresentMon path"
+						placeholder="C:\\path\\PresentMon.exe"
+						value={presentMonPath}
+						onChange={(event) => onPresentMonPathChange(event.target.value)}
+					/>
+				</SettingRow>
+				{fpsStatus !== null && (
+					<p className="setting-desc" style={{ margin: "8px 14px 8px 54px" }}>{fpsStatus}</p>
+				)}
 				{processes.map((process, index) => (
 					<SettingRow
 						key={process}

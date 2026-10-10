@@ -80,6 +80,9 @@ export function useSettings() {
 	const [gamingProcesses, setGamingProcesses] = useState<string[]>(
 		() => readGamingProcesses(localStorage.getItem("bloom-gaming-processes"))
 	);
+	const [presentMonPath, setPresentMonPath] = useState(
+		() => localStorage.getItem("bloom-presentmon-path") || ""
+	);
 	const [dockPreviewEnabled, setDockPreviewEnabled] = useState(true);
 	const [dockIconOnly, setDockIconOnly] = useState(
 		() => localStorage.getItem("bloom-dock-icon-only") === "true"
@@ -182,6 +185,7 @@ export function useSettings() {
 			apply(getVal("bloom-tray-corner-enabled"), setTrayButtonEnabled, readBool);
 			apply(getVal("bloom-gaming-enabled"), setGamingEnabled, readBool);
 			setGamingProcesses(readGamingProcesses(getVal("bloom-gaming-processes")));
+			apply(getVal("bloom-presentmon-path"), setPresentMonPath, (v) => v);
 			apply(getVal("bloom-dock-preview-enabled"), setDockPreviewEnabled, readBool);
 			apply(getVal("bloom-dock-icon-only"), setDockIconOnly, readBool);
 			apply(getVal("bloom-dock-separator-enabled"), setDockSeparatorEnabled, readBool);
@@ -244,6 +248,7 @@ export function useSettings() {
 		"bloom-tray-corner-enabled": setTrayButtonEnabled,
 		"bloom-gaming-enabled": setGamingEnabled,
 		"bloom-gaming-processes": (value) => setGamingProcesses(readGamingProcesses(String(value))),
+		"bloom-presentmon-path": (value) => setPresentMonPath(localStorage.getItem("bloom-presentmon-path") ?? String(value)),
 		"bloom-dock-icon-only": setDockIconOnly,
 		"bloom-dock-separator-enabled": setDockSeparatorEnabled,
 		"bloom-start-icon": setStartIcon,
@@ -515,6 +520,11 @@ export function useSettings() {
 	const handleGamingProcessesChange = (next: string[]) => {
 		setGamingProcesses(next);
 		saveSetting("bloom-gaming-processes", JSON.stringify(next));
+	};
+
+	const handlePresentMonPathChange = (next: string) => {
+		setPresentMonPath(next);
+		saveSetting("bloom-presentmon-path", next);
 	};
 
 	const toggleDockPreview = () => {
@@ -832,6 +842,8 @@ export function useSettings() {
 		toggleGaming,
 		gamingProcesses,
 		handleGamingProcessesChange,
+		presentMonPath,
+		handlePresentMonPathChange,
 		dockEnabled,
 		toggleDock,
 		trayButtonEnabled,

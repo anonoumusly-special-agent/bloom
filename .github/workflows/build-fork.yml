@@ -38,6 +38,10 @@ jobs:
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
 
+      - name: Test FPS stats
+        shell: bash
+        run: rustc --edition 2021 --test src-tauri/src/fps_stats.rs -o fps_stats_test.exe && ./fps_stats_test.exe
+
       - name: Build Tauri app (unsigned)
         run: bun tauri build --config '{"bundle":{"createUpdaterArtifacts":false}}'
 

@@ -34,6 +34,7 @@ pub fn setup_gaming_mode(app: AppHandle) {
 
             if !enabled {
                 if active_game.is_some() {
+                    crate::fps::stop();
                     run_task("BloomGameModeOff");
                     active_game = None;
                     publish_state(&app, None);
@@ -42,20 +43,22 @@ pub fn setup_gaming_mode(app: AppHandle) {
                 match running_processes() {
                     Ok(processes) => {
                         let still_running = active_game.as_ref().is_some_and(|game| {
-                            contains_exe(&configured, game) && contains_exe(&processes, game)
+                            contains_exe(&configured, game) && find_pid(&processes, game).is_some()
                         });
                         if active_game.is_some() && !still_running {
+                            crate::fps::stop();
                             run_task("BloomGameModeOff");
                             active_game = None;
                             publish_state(&app, None);
                         } else if active_game.is_none() {
-                            if let Some(game) = configured
+                            if let Some((game, pid)) = configured
                                 .iter()
-                                .find(|exe| contains_exe(&processes, exe))
+                                .find_map(|exe| find_pid(&processes, exe).map(|pid| (exe, pid)))
                             {
-                                active_game = Some(game.clone());
+                                active_game = Some(game.to_string());
                                 run_task("BloomGameModeOn");
                                 publish_state(&app, active_game.clone());
+                                crate::fps::start(&app, pid);
                             }
                         }
                     }
@@ -106,6 +109,7 @@ pub fn setup_gaming_mode(app: AppHandle) {
                 } else {
                     (None, None, None, None)
                 };
+            let (fps_avg, fps_1_low, frametime_ms, fps_status) = crate::fps::snapshot();
             let _ = stats_app.emit(
                 "gaming-stats",
                 serde_json::json!({
@@ -113,6 +117,10 @@ pub fn setup_gaming_mode(app: AppHandle) {
                     "gpuLoad": gpu_load,
                     "vramUsedMb": vram_used_mb,
                     "vramTotalMb": vram_total_mb,
+                    "fpsAvg": fps_avg.map(f64::round),
+                    "fps1Low": fps_1_low.map(f64::round),
+                    "frametimeMs": frametime_ms.map(|value| (value * 10.0).round() / 10.0),
+                    "fpsStatus": fps_status,
                 }),
             );
             std::thread::sleep(Duration::from_secs(1));
@@ -124,7 +132,7 @@ fn nvml_init_due(last_attempt: Option<Instant>) -> bool {
     last_attempt.map_or(true, |attempt| attempt.elapsed() >= Duration::from_secs(60))
 }
 
-fn running_processes() -> windows::core::Result<Vec<String>> {
+fn running_processes() -> windows::core::Result<Vec<(String, u32)>> {
     unsafe {
         let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)?;
         let result = (|| {
@@ -146,7 +154,10 @@ fn running_processes() -> windows::core::Result<Vec<String>> {
                     .iter()
                     .position(|&ch| ch == 0)
                     .unwrap_or(entry.szExeFile.len());
-                processes.push(String::from_utf16_lossy(&entry.szExeFile[..end]));
+                processes.push((
+                    String::from_utf16_lossy(&entry.szExeFile[..end]),
+                    entry.th32ProcessID,
+                ));
                 if let Err(error) = Process32NextW(snapshot, &mut entry) {
                     return if GetLastError() == ERROR_NO_MORE_FILES {
                         Ok(processes)
@@ -164,6 +175,14 @@ fn running_processes() -> windows::core::Result<Vec<String>> {
 fn contains_exe(processes: &[String], game: &str) -> bool {
     let game = game.to_lowercase();
     processes.iter().any(|exe| exe.to_lowercase() == game)
+}
+
+fn find_pid(processes: &[(String, u32)], game: &str) -> Option<u32> {
+    let game = game.to_lowercase();
+    processes
+        .iter()
+        .find(|(exe, _)| exe.to_lowercase() == game)
+        .map(|(_, pid)| *pid)
 }
 
 fn run_task(name: &str) {
@@ -212,7 +231,7 @@ pub fn get_gaming_mode_state() -> serde_json::Value {
 
 #[cfg(test)]
 mod tests {
-    use super::{contains_exe, nvml_init_due};
+    use super::{contains_exe, find_pid, nvml_init_due};
     use std::time::{Duration, Instant};
 
     #[test]
@@ -228,5 +247,6 @@ mod tests {
         assert!(contains_exe(&running, "valorant-win64-shipping.EXE"));
         assert!(!contains_exe(&running, "other.exe"));
         assert!(contains_exe(&["ÜberGame.exe".to_string()], "übergame.EXE"));
+        assert_eq!(find_pid(&[("ÜberGame.exe".to_string(), 42)], "übergame.EXE"), Some(42));
     }
 }

@@ -218,6 +218,8 @@ function SettingsApp() {
 							toggleEnabled={settings.toggleGaming}
 							processes={settings.gamingProcesses}
 							onProcessesChange={settings.handleGamingProcessesChange}
+							presentMonPath={settings.presentMonPath}
+							onPresentMonPathChange={settings.handlePresentMonPathChange}
 						/>
 					)}
 					{activeTab === "overlays" && (
