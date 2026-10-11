@@ -1,0 +1,55 @@
+name: Build Fork
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "feat/**"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.repository == 'anonoumusly-special-agent/bloom'
+    runs-on: windows-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.0
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          toolchain: stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Test FPS stats
+        shell: bash
+        run: rustc --edition 2021 --test src-tauri/src/fps_stats.rs -o fps_stats_test.exe && ./fps_stats_test.exe
+
+      - name: Build Tauri app (unsigned)
+        run: bun tauri build --config '{"bundle":{"createUpdaterArtifacts":false}}'
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: bloom-fork-installer
+          path: |
+            src-tauri/target/release/bundle/**/*.exe
+            src-tauri/target/release/bundle/**/*.msi
+          retention-days: 14

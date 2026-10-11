@@ -22,6 +22,7 @@ Edit `settings.json` with any text editor while Bloom is running. Changes are ap
 | Key                             | Type                             | Default     | Description                                                                                                                                                                      |
 | ------------------------------- | -------------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `bloom-dock-enabled`            | `"true"` / `"false"`             | `"true"`    | Show or hide the Bloom Dock (taskbar replacement).                                                                                                                               |
+| `bloom-tray-corner-enabled`     | `"true"` / `"false"`             | `"true"`    | Show the system tray button together with the brightness slider at the right screen edge.                                                                                      |
 | `bloom-dock-mode`               | `"fixed"` / `"smart"` / `"peek"` | `"smart"`   | Dock visibility behavior. **fixed** = always visible as AppBar. **smart** = auto-hide when overlapped by fullscreen apps. **peek** = hidden until cursor approaches bottom edge. |
 | `bloom-dock-preview-enabled`    | `"true"` / `"false"`             | `"true"`    | Show window thumbnail previews when hovering dock icons.                                                                                                                         |
 | `bloom-dock-icon-only`          | `"true"` / `"false"`             | `"false"`   | Minimal icon-only style (no background/padding around icons).                                                                                                                    |
@@ -29,6 +30,15 @@ Edit `settings.json` with any text editor while Bloom is running. Changes are ap
 | `bloom-start-icon`              | icon key / `custom:<data URI>`   | `"default"` | Start button icon: `default`, `bloom-colorful`, `bloom-golden`, `bloom-biscuit`, `windows`, or `custom:` followed by an uploaded image's data URI.                               |
 | `bloom-dock-adaptive`           | `"true"` / `"false"`             | `"false"`   | Fixed dock only. Stretch the dock to full width like a traditional taskbar while a window is maximized, and contract back when it's restored.                                    |
 | `bloom-dock-win-number-enabled` | `"true"` / `"false"`             | `"true"`    | When the taskbar is replaced, Win+1 through Win+9 activate the matching pinned dock app (focus/minimize if running, launch otherwise) instead of the native taskbar slots.       |
+
+### Gaming
+
+| Key                      | Type                   | Default   | Description                                                                                 |
+| ------------------------ | ---------------------- | --------- | ------------------------------------------------------------------------------------------- |
+| `bloom-gaming-enabled`   | `"true"` / `"false"`   | `"false"` | Enable Gaming Mode when a selected game process is running.                                |
+| `bloom-gaming-processes` | JSON string array      | `"[]"`    | Executable file names that trigger Gaming Mode, e.g. `["VALORANT-Win64-Shipping.exe"]`. |
+| `bloom-presentmon-path`  | file path string       | `""`      | Path to PresentMon.exe for FPS metrics in Gaming Mode.                                    |
+| `bloom-fps-compact`      | `"true"` / `"false"`   | `"true"`  | Show FPS, average, 1% low, and frame time in one row instead of GPU temperature and VRAM. |
 
 ### Notch
 
