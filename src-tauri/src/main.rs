@@ -1,6 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod fps;
+mod fps_stats;
+mod gaming;
 mod services;
 mod state;
 mod tray;
@@ -173,7 +176,8 @@ fn main() {
             write_settings_to_path,
             updater::check_for_updates,
             updater::install_update,
-            updater::get_update_state
+            updater::get_update_state,
+            gaming::get_gaming_mode_state
         ])
         .setup(|app| {
             init_taskbar_marker(app.handle());
@@ -315,6 +319,7 @@ fn main() {
             setup_taskbar_hook();
             setup_audio_visualization(app.handle().clone());
             setup_settings_watcher(app.handle().clone());
+            gaming::setup_gaming_mode(app.handle().clone());
 
             // Listen for second-instance signal to open settings
             if let Some(&h_event) = SINGLE_INSTANCE_EVENT_HANDLE.get() {
@@ -417,6 +422,7 @@ fn main() {
         .expect("error while building tauri application");
     app.run(|_, event| {
         if let tauri::RunEvent::Exit = event {
+            fps::stop();
             set_taskbar_visibility(true, true);
             NATIVE_TASKBAR_HIDDEN.store(false, Ordering::Relaxed);
             set_native_osd_suppressed(false);

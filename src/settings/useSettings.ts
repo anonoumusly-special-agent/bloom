@@ -18,6 +18,15 @@ function readBool(val: string | null): boolean {
 	return val === "true";
 }
 
+function readGamingProcesses(value: string | null): string[] {
+	try {
+		const parsed: unknown = JSON.parse(value || "[]");
+		return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+	} catch {
+		return [];
+	}
+}
+
 export function useSettings() {
 	const [autostart, setAutostart] = useState(false);
 	const [weatherEnabled, setWeatherEnabled] = useState(true);
@@ -62,6 +71,21 @@ export function useSettings() {
 		right: ["battery"]
 	});
 	const [dockEnabled, setDockEnabled] = useState(true);
+	const [trayButtonEnabled, setTrayButtonEnabled] = useState(
+		() => localStorage.getItem("bloom-tray-corner-enabled") !== "false"
+	);
+	const [gamingEnabled, setGamingEnabled] = useState(
+		() => localStorage.getItem("bloom-gaming-enabled") === "true"
+	);
+	const [fpsCompact, setFpsCompact] = useState(
+		() => localStorage.getItem("bloom-fps-compact") !== "false"
+	);
+	const [gamingProcesses, setGamingProcesses] = useState<string[]>(
+		() => readGamingProcesses(localStorage.getItem("bloom-gaming-processes"))
+	);
+	const [presentMonPath, setPresentMonPath] = useState(
+		() => localStorage.getItem("bloom-presentmon-path") || ""
+	);
 	const [dockPreviewEnabled, setDockPreviewEnabled] = useState(true);
 	const [dockIconOnly, setDockIconOnly] = useState(
 		() => localStorage.getItem("bloom-dock-icon-only") === "true"
@@ -161,6 +185,11 @@ export function useSettings() {
 			apply(getVal("bloom-volume-edge-enabled"), setVolumeEdgeEnabled, readBool);
 			apply(getVal("bloom-brightness-edge-enabled"), setBrightnessEdgeEnabled, readBool);
 			apply(getVal("bloom-dock-enabled"), setDockEnabled, readBool);
+			apply(getVal("bloom-tray-corner-enabled"), setTrayButtonEnabled, readBool);
+			apply(getVal("bloom-gaming-enabled"), setGamingEnabled, readBool);
+			apply(getVal("bloom-fps-compact"), setFpsCompact, readBool);
+			setGamingProcesses(readGamingProcesses(getVal("bloom-gaming-processes")));
+			apply(getVal("bloom-presentmon-path"), setPresentMonPath, (v) => v);
 			apply(getVal("bloom-dock-preview-enabled"), setDockPreviewEnabled, readBool);
 			apply(getVal("bloom-dock-icon-only"), setDockIconOnly, readBool);
 			apply(getVal("bloom-dock-separator-enabled"), setDockSeparatorEnabled, readBool);
@@ -220,6 +249,11 @@ export function useSettings() {
 		"bloom-notch-mode": setNotchMode,
 		"bloom-notch-edge-delay": setNotchEdgeDelay,
 		"bloom-dock-enabled": setDockEnabled,
+		"bloom-tray-corner-enabled": setTrayButtonEnabled,
+		"bloom-gaming-enabled": setGamingEnabled,
+		"bloom-fps-compact": setFpsCompact,
+		"bloom-gaming-processes": (value) => setGamingProcesses(readGamingProcesses(String(value))),
+		"bloom-presentmon-path": (value) => setPresentMonPath(localStorage.getItem("bloom-presentmon-path") ?? String(value)),
 		"bloom-dock-icon-only": setDockIconOnly,
 		"bloom-dock-separator-enabled": setDockSeparatorEnabled,
 		"bloom-start-icon": setStartIcon,
@@ -474,6 +508,34 @@ export function useSettings() {
 		const next = !dockEnabled;
 		setDockEnabled(next);
 		saveSetting("bloom-dock-enabled", String(next));
+	};
+
+	const toggleTrayButton = () => {
+		const next = !trayButtonEnabled;
+		setTrayButtonEnabled(next);
+		saveSetting("bloom-tray-corner-enabled", String(next));
+	};
+
+	const toggleGaming = () => {
+		const next = !gamingEnabled;
+		setGamingEnabled(next);
+		saveSetting("bloom-gaming-enabled", String(next));
+	};
+
+	const toggleFpsCompact = () => {
+		const next = !fpsCompact;
+		setFpsCompact(next);
+		saveSetting("bloom-fps-compact", String(next));
+	};
+
+	const handleGamingProcessesChange = (next: string[]) => {
+		setGamingProcesses(next);
+		saveSetting("bloom-gaming-processes", JSON.stringify(next));
+	};
+
+	const handlePresentMonPathChange = (next: string) => {
+		setPresentMonPath(next);
+		saveSetting("bloom-presentmon-path", next);
 	};
 
 	const toggleDockPreview = () => {
@@ -787,8 +849,18 @@ export function useSettings() {
 		handleWidgetsChange,
 
 		// Dock
+		gamingEnabled,
+		toggleGaming,
+		fpsCompact,
+		toggleFpsCompact,
+		gamingProcesses,
+		handleGamingProcessesChange,
+		presentMonPath,
+		handlePresentMonPathChange,
 		dockEnabled,
 		toggleDock,
+		trayButtonEnabled,
+		toggleTrayButton,
 		dockMode,
 		setDockModeValue,
 		dockPreviewEnabled,

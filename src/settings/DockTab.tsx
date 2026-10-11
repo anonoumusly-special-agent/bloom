@@ -8,7 +8,8 @@ import {
 	Maximize2,
 	Keyboard,
 	Sparkles,
-	RotateCcw
+	RotateCcw,
+	Grid2X2
 } from "lucide-react";
 import { SettingRow } from "./SettingRow";
 
@@ -38,6 +39,8 @@ const startIconTileStyle = (active: boolean): CSSProperties => ({
 interface DockTabProps {
 	dockEnabled: boolean;
 	toggleDock: () => void;
+	trayButtonEnabled: boolean;
+	toggleTrayButton: () => void;
 	dockMode: string;
 	setDockModeValue: (mode: string) => void;
 	dockPreviewEnabled: boolean;
@@ -57,6 +60,8 @@ interface DockTabProps {
 export function DockTab({
 	dockEnabled,
 	toggleDock,
+	trayButtonEnabled,
+	toggleTrayButton,
 	dockMode,
 	setDockModeValue,
 	dockPreviewEnabled,
@@ -90,6 +95,17 @@ export function DockTab({
 				<SettingRow icon={Monitor} label="Bloom Dock" desc="Replace Windows taskbar">
 					<label className="toggle-switch">
 						<input type="checkbox" checked={dockEnabled} onChange={toggleDock} />
+						<span className="slider"></span>
+					</label>
+				</SettingRow>
+
+				<SettingRow
+					icon={Grid2X2}
+					label="Tray Button at Right Edge"
+					desc="Show with the brightness slider at the right screen edge"
+				>
+					<label className="toggle-switch">
+						<input type="checkbox" checked={trayButtonEnabled} onChange={toggleTrayButton} />
 						<span className="slider"></span>
 					</label>
 				</SettingRow>

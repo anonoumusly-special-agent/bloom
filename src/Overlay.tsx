@@ -8,7 +8,7 @@ import { useTrailingThrottle } from "./hooks/useTrailingThrottle";
 import { getVersion } from "@tauri-apps/api/app";
 import { reloadIfMirrorWasStale } from "./hooks/settingsMirror";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { MixerIcon, SpeakerIcon } from "./icons";
+import { MixerIcon, SpeakerIcon, TrayIcon } from "./icons";
 import "./Overlay.css";
 import { initTheme } from "./theme";
 
@@ -488,10 +488,12 @@ const SunIcon = ({ brightness }: { brightness: number }) => (
 
 function BrightnessNotch({
 	brightness,
-	onBrightnessChange
+	onBrightnessChange,
+	trayButtonEnabled
 }: {
 	brightness: number;
 	onBrightnessChange: (val: number) => void;
+	trayButtonEnabled: boolean;
 }) {
 	const barRef = useRef<HTMLDivElement>(null);
 
@@ -537,7 +539,7 @@ function BrightnessNotch({
 			}}
 			transition={{ type: "spring", stiffness: 450, damping: 25, mass: 0.7 }}
 		>
-			<div className="brightness-notch">
+			<div className={`brightness-notch${trayButtonEnabled ? " with-tray-button" : ""}`}>
 				<motion.div
 					className="brightness-notch-content-group"
 					initial={{ opacity: 0, x: 10 }}
@@ -562,6 +564,22 @@ function BrightnessNotch({
 					<div className="brightness-notch-icon">
 						<SunIcon brightness={brightness} />
 					</div>
+					{trayButtonEnabled && (
+						<button
+						className="brightness-notch-tray-button"
+							type="button"
+							title="System Tray"
+							aria-label="Open system tray"
+							onMouseDown={(event) => event.stopPropagation()}
+							onClick={() =>
+							invoke("open_system_tray").catch((error) =>
+								console.error("Failed to open system tray:", error)
+							)
+							}
+						>
+							<TrayIcon />
+						</button>
+					)}
 				</motion.div>
 			</div>
 		</motion.div>
@@ -599,6 +617,9 @@ function OverlayApp() {
 	const [brightnessEdgeEnabled, setBrightnessEdgeEnabled] = useState(
 		() => localStorage.getItem("bloom-brightness-edge-enabled") !== "false"
 	);
+	const [trayButtonEnabled, setTrayButtonEnabled] = useState(
+		() => localStorage.getItem("bloom-tray-corner-enabled") !== "false"
+	);
 
 	// Shared state
 	const [scale, setScale] = useState(() =>
@@ -632,6 +653,9 @@ function OverlayApp() {
 				}
 				if (settings && settings["bloom-volume-overlay-enabled"] !== undefined) {
 					setVolumeOverlayEnabled(settings["bloom-volume-overlay-enabled"] === "true");
+				}
+				if (settings && settings["bloom-tray-corner-enabled"] !== undefined) {
+					setTrayButtonEnabled(settings["bloom-tray-corner-enabled"] === "true");
 				}
 			})
 			.catch(console.error);
@@ -784,6 +808,7 @@ function OverlayApp() {
 		"bloom-volume-edge-enabled": setVolumeEdgeEnabled,
 		"bloom-brightness-overlay-enabled": setBrightnessOverlayEnabled,
 		"bloom-brightness-edge-enabled": setBrightnessEdgeEnabled,
+		"bloom-tray-corner-enabled": setTrayButtonEnabled,
 		"bloom-scale": setScale
 	});
 
@@ -986,6 +1011,7 @@ function OverlayApp() {
 							<BrightnessNotch
 								brightness={brightness}
 								onBrightnessChange={handleBrightnessChange}
+								trayButtonEnabled={trayButtonEnabled}
 								key="brightness-island"
 							/>
 						)}
