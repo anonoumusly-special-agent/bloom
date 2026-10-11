@@ -553,7 +553,11 @@ const Dock = memo(function Dock() {
 			if (app.path === "start") {
 				await invoke("open_app", { appName: "start" });
 			} else if (app.is_background && app.tray_ids?.length === 1) {
-				await invoke("activate_tray_icon", { trayId: app.tray_ids[0] });
+				try {
+					await invoke("activate_tray_icon", { trayId: app.tray_ids[0] });
+				} catch {
+					await invoke("open_app", { appName: app.path });
+				}
 			} else if (app.all_hwnds && app.all_hwnds.length > 1) {
 				// Several windows: bring the most recent forward, then cycle.
 				await invoke("focus_app_windows", { hwnds: app.all_hwnds.map(([hwnd]) => hwnd) });

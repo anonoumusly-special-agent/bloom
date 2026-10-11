@@ -529,7 +529,78 @@ pub async fn open_app(app: AppHandle, app_name: String) {
         return;
     }
 
-    tauri::async_runtime::spawn_blocking(move || launch_path(&app_name));
+    tauri::async_runtime::spawn_blocking(move || {
+        if std::path::Path::new(&app_name).is_absolute()
+            && app_name.to_lowercase().ends_with(".exe")
+            && restore_hidden_app_window(&app_name)
+        {
+            return;
+        }
+        launch_path(&app_name);
+    });
+}
+
+fn same_windows_path(a: &str, b: &str) -> bool {
+    a.to_lowercase().replace('/', "\\") == b.to_lowercase().replace('/', "\\")
+}
+
+fn restore_hidden_app_window(path: &str) -> bool {
+    use windows::Win32::Foundation::RECT;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindow, GetWindowLongW, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId,
+        SetForegroundWindow, ShowWindow, GWL_EXSTYLE, GWL_STYLE, GW_OWNER, SW_RESTORE, SW_SHOW,
+        WS_CAPTION, WS_EX_TOOLWINDOW,
+    };
+
+    struct Search<'a> {
+        path: &'a str,
+        found: Option<HWND>,
+    }
+
+    unsafe extern "system" fn find_window(hwnd: HWND, lparam: LPARAM) -> windows::core::BOOL {
+        let search = &mut *(lparam.0 as *mut Search<'_>);
+        if GetWindow(hwnd, GW_OWNER).is_ok()
+            || (GetWindowLongW(hwnd, GWL_EXSTYLE) as u32 & WS_EX_TOOLWINDOW.0) != 0
+        {
+            return true.into();
+        }
+
+        let mut title = [0u16; 512];
+        if GetWindowTextW(hwnd, &mut title) == 0 {
+            return true.into();
+        }
+        if (GetWindowLongW(hwnd, GWL_STYLE) as u32 & WS_CAPTION.0) == 0 {
+            let mut rect = RECT::default();
+            if GetWindowRect(hwnd, &mut rect).is_err()
+                || rect.right <= rect.left
+                || rect.bottom <= rect.top
+            {
+                return true.into();
+            }
+        }
+
+        let mut pid = 0;
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        if pid != 0
+            && process_image_path(pid).is_some_and(|exe| same_windows_path(&exe, search.path))
+        {
+            search.found = Some(hwnd);
+            return false.into();
+        }
+        true.into()
+    }
+
+    let mut search = Search { path, found: None };
+    unsafe {
+        let _ = EnumWindows(Some(find_window), LPARAM(&mut search as *mut Search<'_> as isize));
+        if let Some(hwnd) = search.found {
+            let _ = ShowWindow(hwnd, SW_SHOW);
+            let _ = ShowWindow(hwnd, SW_RESTORE);
+            let _ = SetForegroundWindow(hwnd);
+            return true;
+        }
+    }
+    false
 }
 
 fn is_bloom_launch_target(target: &str, identifier: &str) -> bool {
@@ -3645,6 +3716,18 @@ pub fn setup_settings_watcher(app: AppHandle) {
 #[cfg(test)]
 mod pwa_icon_tests {
     use super::*;
+
+    #[test]
+    fn hidden_window_requires_same_executable_path() {
+        assert!(same_windows_path(
+            "C:\\Apps\\Discord.exe",
+            "c:/apps/DISCORD.EXE"
+        ));
+        assert!(!same_windows_path(
+            "C:\\Apps\\Discord.exe",
+            "C:\\Other\\Discord.exe"
+        ));
+    }
 
     #[test]
     fn bloom_launch_targets_reuse_the_running_settings_window() {
