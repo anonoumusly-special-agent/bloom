@@ -5,7 +5,8 @@ use windows::Win32::Foundation::{HWND, LPARAM};
 use windows::Win32::UI::WindowsAndMessaging::EnumWindows;
 
 use crate::services::{
-    enum_windows_proc, register_dock_appbar, sync_overlays, unregister_appbar_native,
+    enum_windows_proc, is_visible_app_window, register_dock_appbar, sync_overlays,
+    unregister_appbar_native,
 };
 use crate::state::*;
 use crate::types::{
@@ -537,6 +538,7 @@ pub async fn open_app(app: AppHandle, app_name: String) {
         if std::path::Path::new(&app_name).is_absolute()
             && app_name.to_lowercase().ends_with(".exe")
             && restore_hidden_app_window(&app_name)
+            && wait_for_visible_window(&app_name)
         {
             return;
         }
@@ -548,12 +550,54 @@ fn same_windows_path(a: &str, b: &str) -> bool {
     a.to_lowercase().replace('/', "\\") == b.to_lowercase().replace('/', "\\")
 }
 
+fn visible_window_for_exe(path: &str) -> Option<HWND> {
+    use windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
+
+    struct Search<'a> {
+        path: &'a str,
+        found: Option<HWND>,
+    }
+
+    unsafe extern "system" fn find_window(hwnd: HWND, lparam: LPARAM) -> windows::core::BOOL {
+        let search = &mut *(lparam.0 as *mut Search<'_>);
+        if is_visible_app_window(hwnd) {
+            let mut pid = 0;
+            GetWindowThreadProcessId(hwnd, Some(&mut pid));
+            if pid != 0
+                && process_image_path(pid).is_some_and(|exe| same_windows_path(&exe, search.path))
+            {
+                search.found = Some(hwnd);
+                return false.into();
+            }
+        }
+        true.into()
+    }
+
+    let mut search = Search { path, found: None };
+    unsafe {
+        let _ = EnumWindows(Some(find_window), LPARAM(&mut search as *mut Search<'_> as isize));
+    }
+    search.found
+}
+
+fn wait_for_visible_window(path: &str) -> bool {
+    for attempt in 0..=12 {
+        if visible_window_for_exe(path).is_some() {
+            return true;
+        }
+        if attempt < 12 {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+    }
+    false
+}
+
 fn restore_hidden_app_window(path: &str) -> bool {
     use windows::Win32::Foundation::RECT;
     use windows::Win32::UI::WindowsAndMessaging::{
         GetWindow, GetWindowLongW, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId,
-        SetForegroundWindow, ShowWindow, GWL_EXSTYLE, GWL_STYLE, GW_OWNER, SW_RESTORE, SW_SHOW,
-        WS_CAPTION, WS_EX_TOOLWINDOW,
+        SetForegroundWindow, ShowWindow, GWL_EXSTYLE, GW_OWNER, SW_RESTORE, SW_SHOW,
+        WS_EX_TOOLWINDOW,
     };
 
     struct Search<'a> {
@@ -573,14 +617,12 @@ fn restore_hidden_app_window(path: &str) -> bool {
         if GetWindowTextW(hwnd, &mut title) == 0 {
             return true.into();
         }
-        if (GetWindowLongW(hwnd, GWL_STYLE) as u32 & WS_CAPTION.0) == 0 {
-            let mut rect = RECT::default();
-            if GetWindowRect(hwnd, &mut rect).is_err()
-                || rect.right <= rect.left
-                || rect.bottom <= rect.top
-            {
-                return true.into();
-            }
+        let mut rect = RECT::default();
+        if GetWindowRect(hwnd, &mut rect).is_err()
+            || rect.right <= rect.left
+            || rect.bottom <= rect.top
+        {
+            return true.into();
         }
 
         let mut pid = 0;
@@ -4013,8 +4055,18 @@ pub async fn open_system_action(action: SystemAction) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn activate_tray_icon(tray_id: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || crate::tray::interact(&tray_id, false))
+pub async fn activate_tray_icon(tray_id: String, app_path: Option<String>) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::tray::interact(&tray_id, false)?;
+        if let Some(path) = app_path.as_deref().filter(|path| {
+            std::path::Path::new(path).is_absolute() && path.to_lowercase().ends_with(".exe")
+        }) {
+            if !wait_for_visible_window(path) {
+                return Err("tray click opened no window".into());
+            }
+        }
+        Ok(())
+    })
         .await
         .map_err(|e| e.to_string())?
 }

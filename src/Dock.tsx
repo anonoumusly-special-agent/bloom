@@ -555,7 +555,7 @@ const Dock = memo(function Dock() {
 				await invoke("open_app", { appName: "start" });
 			} else if (app.is_background && app.tray_ids?.length === 1) {
 				try {
-					await invoke("activate_tray_icon", { trayId: app.tray_ids[0] });
+					await invoke("activate_tray_icon", { trayId: app.tray_ids[0], appPath: app.path });
 				} catch {
 					await invoke("open_app", { appName: app.path });
 				}

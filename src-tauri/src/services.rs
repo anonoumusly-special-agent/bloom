@@ -3455,43 +3455,37 @@ unsafe fn dialog_has_tab_control(hwnd: HWND) -> bool {
     found
 }
 
+pub(crate) unsafe fn is_visible_app_window(hwnd: HWND) -> bool {
+    if !IsWindowVisible(hwnd).as_bool() {
+        return false;
+    }
+    // IsWindowVisible also reports cloaked windows on other virtual desktops.
+    let mut cloaked = 0u32;
+    if windows::Win32::Graphics::Dwm::DwmGetWindowAttribute(
+        hwnd,
+        windows::Win32::Graphics::Dwm::DWMWA_CLOAKED,
+        &mut cloaked as *mut _ as *mut _,
+        std::mem::size_of::<u32>() as u32,
+    )
+    .is_ok()
+        && cloaked != 0
+    {
+        return false;
+    }
+    let mut title = [0u16; 512];
+    windows::Win32::UI::WindowsAndMessaging::GetWindowTextW(hwnd, &mut title) > 0
+        && (GetWindowLongW(hwnd, GWL_EXSTYLE) as u32 & WS_EX_TOOLWINDOW.0) == 0
+}
+
 pub unsafe extern "system" fn enum_windows_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
     let apps = &mut *(lparam.0 as *mut Vec<AppInfo>);
 
-    if IsWindowVisible(hwnd).as_bool() {
-        // DWM-cloaked windows are not actually on screen: closed/suspended UWP
-        // apps keep a cloaked frame alive, and windows on other virtual desktops
-        // are shell-cloaked. Neither belongs in the dock. IsWindowVisible stays
-        // true for them, so this needs the DWM check.
-        {
-            let mut cloaked = 0u32;
-            let size = std::mem::size_of::<u32>() as u32;
-            if windows::Win32::Graphics::Dwm::DwmGetWindowAttribute(
-                hwnd,
-                windows::Win32::Graphics::Dwm::DWMWA_CLOAKED,
-                &mut cloaked as *mut _ as *mut _,
-                size,
-            )
-            .is_ok()
-                && cloaked != 0
-            {
-                return true.into();
-            }
-        }
+    if is_visible_app_window(hwnd) {
 
         let mut text = [0u16; 512];
         let len = windows::Win32::UI::WindowsAndMessaging::GetWindowTextW(hwnd, &mut text);
         if len > 0 {
             let title = String::from_utf16_lossy(&text[..len as usize]);
-
-            let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
-
-            // Basic filter for top-level app windows
-            // We include windows without captions if they don't have the ToolWindow style,
-            // as many games and modern apps (like Spotify/Valorant) lack WS_CAPTION.
-            if (ex_style & WS_EX_TOOLWINDOW.0) != 0 {
-                return true.into();
-            }
 
             // Filter out system containers and background stuff
             if title == "Program Manager" || title == "Bloom" || title == "Bloom Dock" {
