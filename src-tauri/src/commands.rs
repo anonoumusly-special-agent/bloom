@@ -841,20 +841,19 @@ pub async fn get_active_windows() -> Vec<AppInfo> {
 }
 
 #[tauri::command]
-pub async fn focus_window(hwnd: isize) {
+pub async fn focus_window(hwnd: isize) -> bool {
     tauri::async_runtime::spawn_blocking(move || unsafe {
         use windows::Win32::UI::WindowsAndMessaging::{
-            GetForegroundWindow, GetWindowThreadProcessId, IsIconic, IsWindowVisible,
-            SetForegroundWindow, ShowWindow, SW_MINIMIZE, SW_RESTORE, SW_SHOW,
+            GetForegroundWindow, GetWindowThreadProcessId, IsIconic, IsWindow, SetForegroundWindow,
+            ShowWindow, SW_MINIMIZE, SW_RESTORE,
         };
         let hwnd = HWND(hwnd as *mut _);
+        if !IsWindow(Some(hwnd)).as_bool() || !is_visible_app_window(hwnd) {
+            return false;
+        }
         let my_pid = std::process::id();
 
-        if !IsWindowVisible(hwnd).as_bool() {
-            let _ = ShowWindow(hwnd, SW_SHOW);
-            let _ = ShowWindow(hwnd, SW_RESTORE);
-            let _ = SetForegroundWindow(hwnd);
-        } else if IsIconic(hwnd).as_bool() {
+        if IsIconic(hwnd).as_bool() {
             let _ = ShowWindow(hwnd, SW_RESTORE);
             let _ = SetForegroundWindow(hwnd);
         } else {
@@ -896,9 +895,10 @@ pub async fn focus_window(hwnd: isize) {
                 let _ = SetForegroundWindow(hwnd);
             }
         }
+        true
     })
     .await
-    .unwrap_or_default();
+    .unwrap_or_default()
 }
 
 /// Brings one window of a multi-window dock item forward, like the taskbar's
@@ -3696,6 +3696,11 @@ pub fn setup_settings_watcher(app: AppHandle) {
 #[cfg(test)]
 mod pwa_icon_tests {
     use super::*;
+
+    #[test]
+    fn invalid_window_cannot_be_focused() {
+        assert!(!tauri::async_runtime::block_on(focus_window(0)));
+    }
 
     #[test]
     fn hidden_window_requires_same_executable_path() {

@@ -303,8 +303,8 @@ pub fn setup_window_change_hook(app_handle: AppHandle) {
 
         use windows::Win32::UI::Accessibility::SetWinEventHook;
         use windows::Win32::UI::WindowsAndMessaging::{
-            EVENT_OBJECT_CREATE, EVENT_OBJECT_DESTROY, EVENT_OBJECT_HIDE, EVENT_OBJECT_SHOW,
-            WINEVENT_OUTOFCONTEXT,
+            EVENT_OBJECT_CLOAKED, EVENT_OBJECT_CREATE, EVENT_OBJECT_DESTROY, EVENT_OBJECT_HIDE,
+            EVENT_OBJECT_SHOW, EVENT_OBJECT_UNCLOAKED, WINEVENT_OUTOFCONTEXT,
         };
 
         // Hook create and destroy events for top-level windows
@@ -345,6 +345,15 @@ pub fn setup_window_change_hook(app_handle: AppHandle) {
             0,
             WINEVENT_OUTOFCONTEXT,
         );
+        let _cloak_hook = SetWinEventHook(
+            EVENT_OBJECT_CLOAKED,
+            EVENT_OBJECT_UNCLOAKED,
+            None,
+            Some(window_change_event_proc),
+            0,
+            0,
+            WINEVENT_OUTOFCONTEXT,
+        );
 
         // Store hooks to prevent them from being dropped
         Box::leak(Box::new(_create_hook));
@@ -368,12 +377,15 @@ unsafe extern "system" fn window_change_event_proc(
     // state may have changed. Cheap flag; the worker thread does the scan.
     {
         use windows::Win32::UI::WindowsAndMessaging::{
-            EVENT_OBJECT_DESTROY, EVENT_OBJECT_HIDE, EVENT_OBJECT_SHOW,
+            EVENT_OBJECT_CLOAKED, EVENT_OBJECT_DESTROY, EVENT_OBJECT_HIDE, EVENT_OBJECT_SHOW,
+            EVENT_OBJECT_UNCLOAKED,
         };
         if id_object == 0
             && id_child == 0
             && (event == EVENT_OBJECT_SHOW
                 || event == EVENT_OBJECT_HIDE
+                || event == EVENT_OBJECT_CLOAKED
+                || event == EVENT_OBJECT_UNCLOAKED
                 || event == EVENT_OBJECT_DESTROY)
         {
             CAPTURE_RECHECK.store(true, Ordering::Relaxed);
@@ -381,15 +393,22 @@ unsafe extern "system" fn window_change_event_proc(
     }
 
     use windows::Win32::UI::WindowsAndMessaging::{
-        GetWindowLongW, GetWindowThreadProcessId, IsWindow, GWL_EXSTYLE, WS_EX_TOOLWINDOW,
+        GetWindowLongW, GetWindowThreadProcessId, IsWindow, EVENT_OBJECT_DESTROY, GWL_EXSTYLE,
+        WS_EX_TOOLWINDOW,
     };
 
-    if !IsWindow(Some(hwnd)).as_bool() {
+    let window_exists = IsWindow(Some(hwnd)).as_bool();
+    // Destroy events can arrive after the handle is gone; still refresh the dock.
+    if !window_exists && (event != EVENT_OBJECT_DESTROY || id_object != 0 || id_child != 0) {
         return;
     }
 
     // Skip tool windows (docks, trays, etc.)
-    let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
+    let ex_style = if window_exists {
+        GetWindowLongW(hwnd, GWL_EXSTYLE) as u32
+    } else {
+        0
+    };
     if (ex_style & WS_EX_TOOLWINDOW.0) != 0 {
         return;
     }
@@ -397,7 +416,9 @@ unsafe extern "system" fn window_change_event_proc(
     // Skip our own process
     let my_pid = std::process::id();
     let mut pid = 0u32;
-    GetWindowThreadProcessId(hwnd, Some(&mut pid));
+    if window_exists {
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+    }
     if pid == my_pid {
         return;
     }
