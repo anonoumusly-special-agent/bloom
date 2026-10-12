@@ -15,6 +15,30 @@ use crate::types::{
 use crate::utils::*;
 use std::collections::HashMap;
 
+pub(crate) fn click_log(line: &str) {
+    use std::io::Write;
+
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(std::env::temp_dir().join("bloom-click.log"))
+    {
+        if file.metadata().is_ok_and(|metadata| metadata.len() > 512 * 1024) {
+            let _ = file.set_len(0);
+        }
+        let secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let _ = writeln!(file, "{secs} {line}");
+    }
+}
+
+#[tauri::command]
+pub fn log_click(line: String) {
+    click_log(&line);
+}
+
 #[tauri::command]
 pub async fn set_menu_open(open: bool, rect: Option<IntRect>) {
     MENU_IS_OPEN.store(open, Ordering::Relaxed);
@@ -571,16 +595,91 @@ fn visible_window_for_exe(path: &str) -> Option<HWND> {
     search.found
 }
 
-fn wait_for_visible_window(path: &str) -> bool {
+fn wait_for_visible_window(path: &str) -> Option<HWND> {
     for attempt in 0..=12 {
-        if visible_window_for_exe(path).is_some() {
-            return true;
+        if let Some(hwnd) = visible_window_for_exe(path) {
+            return Some(hwnd);
         }
         if attempt < 12 {
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
     }
-    false
+    None
+}
+
+unsafe fn window_log_details(hwnd: HWND) -> String {
+    use windows::Win32::Foundation::RECT;
+    use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetClassNameW, GetWindow, GetWindowLongW, GetWindowRect, GetWindowTextW,
+        GetWindowThreadProcessId, IsWindowVisible, GWL_EXSTYLE, GW_OWNER, WS_EX_TOOLWINDOW,
+    };
+
+    let mut pid = 0;
+    GetWindowThreadProcessId(hwnd, Some(&mut pid));
+    let mut title = [0u16; 512];
+    let title_len = GetWindowTextW(hwnd, &mut title) as usize;
+    let mut class = [0u16; 256];
+    let class_len = GetClassNameW(hwnd, &mut class) as usize;
+    let mut rect = RECT::default();
+    let rect_text = if GetWindowRect(hwnd, &mut rect).is_ok() {
+        format!("[{},{},{},{}]", rect.left, rect.top, rect.right, rect.bottom)
+    } else {
+        "error".to_string()
+    };
+    let mut cloaked = 0u32;
+    let cloaked_text = if DwmGetWindowAttribute(
+        hwnd,
+        DWMWA_CLOAKED,
+        &mut cloaked as *mut _ as *mut _,
+        std::mem::size_of::<u32>() as u32,
+    )
+    .is_ok()
+    {
+        cloaked.to_string()
+    } else {
+        "error".to_string()
+    };
+    let owner = GetWindow(hwnd, GW_OWNER).unwrap_or_default();
+    format!(
+        "hwnd={} title={:?} class={:?} pid={} visible={} cloaked={} toolwindow={} rect={} owner={}",
+        hwnd.0 as isize,
+        String::from_utf16_lossy(&title[..title_len]),
+        String::from_utf16_lossy(&class[..class_len]),
+        pid,
+        IsWindowVisible(hwnd).as_bool(),
+        cloaked_text,
+        (GetWindowLongW(hwnd, GWL_EXSTYLE) as u32 & WS_EX_TOOLWINDOW.0) != 0,
+        rect_text,
+        owner.0 as isize,
+    )
+}
+
+fn dump_windows_for_exe(path: &str) {
+    use windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
+
+    struct Search<'a> {
+        path: &'a str,
+        count: usize,
+    }
+
+    unsafe extern "system" fn log_window(hwnd: HWND, lparam: LPARAM) -> windows::core::BOOL {
+        let search = &mut *(lparam.0 as *mut Search<'_>);
+        let mut pid = 0;
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        if pid != 0
+            && process_image_path(pid).is_some_and(|exe| same_windows_path(&exe, search.path))
+        {
+            click_log(&format!("window {}", window_log_details(hwnd)));
+            search.count += 1;
+        }
+        (search.count < 40).into()
+    }
+
+    let mut search = Search { path, count: 0 };
+    unsafe {
+        let _ = EnumWindows(Some(log_window), LPARAM(&mut search as *mut Search<'_> as isize));
+    }
 }
 
 fn is_bloom_launch_target(target: &str, identifier: &str) -> bool {
@@ -658,6 +757,10 @@ fn launch_path(path: &str) {
                 None,
                 SW_SHOWNORMAL,
             );
+            click_log(&format!(
+                "launch_path target={target:?} method=ShellExecuteW shell result={}",
+                res.0 as isize
+            ));
             if res.0 as usize <= 32 {
                 eprintln!("Failed to open {}: error code {}", target, res.0 as usize);
             }
@@ -675,6 +778,11 @@ fn launch_path(path: &str) {
                 None,
                 SW_SHOWNORMAL,
             );
+
+            click_log(&format!(
+                "launch_path target={uwp_cmd:?} method=uwp ShellExecuteW result={}",
+                res.0 as isize
+            ));
 
             if res.0 as usize <= 32 {
                 eprintln!(
@@ -740,6 +848,11 @@ fn launch_path(path: &str) {
             None,
             SW_SHOWNORMAL,
         );
+
+        click_log(&format!(
+            "launch_path target={final_path:?} method=ShellExecuteW direct result={}",
+            res.0 as isize
+        ));
 
         if res.0 as usize <= 32 {
             eprintln!(
@@ -844,16 +957,32 @@ pub async fn get_active_windows() -> Vec<AppInfo> {
 pub async fn focus_window(hwnd: isize) -> bool {
     tauri::async_runtime::spawn_blocking(move || unsafe {
         use windows::Win32::UI::WindowsAndMessaging::{
-            GetForegroundWindow, GetWindowThreadProcessId, IsIconic, IsWindow, SetForegroundWindow,
-            ShowWindow, SW_MINIMIZE, SW_RESTORE,
+            GetForegroundWindow, GetWindowThreadProcessId, IsIconic, IsWindow, IsWindowVisible,
+            SetForegroundWindow, ShowWindow, SW_MINIMIZE, SW_RESTORE,
         };
         let hwnd = HWND(hwnd as *mut _);
-        if !IsWindow(Some(hwnd)).as_bool() || !is_visible_app_window(hwnd) {
+        let mut target_pid = 0;
+        GetWindowThreadProcessId(hwnd, Some(&mut target_pid));
+        if target_pid != 0 {
+            if let Some(path) = process_image_path(target_pid) {
+                dump_windows_for_exe(&path);
+            }
+        }
+        let exists = IsWindow(Some(hwnd)).as_bool();
+        let visible = IsWindowVisible(hwnd).as_bool();
+        let app_visible = exists && is_visible_app_window(hwnd);
+        let iconic = IsIconic(hwnd).as_bool();
+        let diagnostic = format!(
+            "focus_window hwnd={} IsWindow={} IsWindowVisible={} is_visible_app_window={} IsIconic={}",
+            hwnd.0 as isize, exists, visible, app_visible, iconic
+        );
+        if !app_visible {
+            click_log(&format!("{diagnostic} returned=false"));
             return false;
         }
         let my_pid = std::process::id();
 
-        if IsIconic(hwnd).as_bool() {
+        if iconic {
             let _ = ShowWindow(hwnd, SW_RESTORE);
             let _ = SetForegroundWindow(hwnd);
         } else {
@@ -895,6 +1024,7 @@ pub async fn focus_window(hwnd: isize) -> bool {
                 let _ = SetForegroundWindow(hwnd);
             }
         }
+        click_log(&format!("{diagnostic} returned=true"));
         true
     })
     .await
@@ -3996,13 +4126,36 @@ pub async fn open_system_action(action: SystemAction) -> Result<(), String> {
 #[tauri::command]
 pub async fn activate_tray_icon(tray_id: String, app_path: Option<String>) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
-        crate::tray::interact(&tray_id, false)?;
+        click_log(&format!(
+            "activate_tray_icon tray_id={tray_id:?} app_path={app_path:?}"
+        ));
+        if let Some(path) = app_path.as_deref() {
+            dump_windows_for_exe(path);
+        }
+        let result = crate::tray::interact(&tray_id, false);
+        click_log(&format!(
+            "activate_tray_icon tray_id={tray_id:?} interact={result:?}"
+        ));
+        result?;
         if let Some(path) = app_path.as_deref().filter(|path| {
             std::path::Path::new(path).is_absolute() && path.to_lowercase().ends_with(".exe")
         }) {
-            if !wait_for_visible_window(path) {
+            let found = wait_for_visible_window(path);
+            click_log(&format!(
+                "activate_tray_icon tray_id={tray_id:?} wait_for_visible_window={}",
+                found.is_some()
+            ));
+            if let Some(hwnd) = found {
+                unsafe {
+                    click_log(&format!("activate_tray_icon found {}", window_log_details(hwnd)));
+                }
+            } else {
                 return Err("tray click opened no window".into());
             }
+        } else {
+            click_log(&format!(
+                "activate_tray_icon tray_id={tray_id:?} wait_for_visible_window=skipped"
+            ));
         }
         Ok(())
     })

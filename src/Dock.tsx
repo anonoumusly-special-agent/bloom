@@ -550,23 +550,40 @@ const Dock = memo(function Dock() {
 	};
 
 	const handleAppClick = async (app: AppInfo) => {
+		void invoke("log_click", {
+			line: "click " + JSON.stringify({
+				name: app.name,
+				path: app.path,
+				hwnd: app.hwnd,
+				is_background: app.is_background,
+				tray_ids: app.tray_ids,
+				all_hwnds: app.all_hwnds
+			})
+		}).catch(() => {});
 		try {
 			if (app.path === "start") {
+				void invoke("log_click", { line: "branch launch" }).catch(() => {});
 				await invoke("open_app", { appName: "start" });
 			} else if (app.is_background && app.tray_ids?.length === 1) {
+				void invoke("log_click", { line: "branch tray" }).catch(() => {});
 				try {
 					await invoke("activate_tray_icon", { trayId: app.tray_ids[0], appPath: app.path });
-				} catch {
+				} catch (err) {
+					void invoke("log_click", { line: `fallback open_app after tray error: ${err}` }).catch(() => {});
 					await invoke("open_app", { appName: app.path });
 				}
 			} else if (app.all_hwnds && app.all_hwnds.length > 1) {
+				void invoke("log_click", { line: "branch multi" }).catch(() => {});
 				// Several windows: bring the most recent forward, then cycle.
 				await invoke("focus_app_windows", { hwnds: app.all_hwnds.map(([hwnd]) => hwnd) });
 			} else if (app.hwnd) {
+				void invoke("log_click", { line: "branch hwnd" }).catch(() => {});
 				if (!(await invoke<boolean>("focus_window", { hwnd: app.hwnd }))) {
+					void invoke("log_click", { line: "fallback open_app after focus_window false" }).catch(() => {});
 					await invoke("open_app", { appName: app.path });
 				}
 			} else {
+				void invoke("log_click", { line: "branch launch" }).catch(() => {});
 				await invoke("open_app", { appName: app.path });
 			}
 		} catch (e) {
