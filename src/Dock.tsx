@@ -1,7 +1,8 @@
 import { useState, useEffect, useLayoutEffect, useMemo, useRef, memo } from "react";
 import { motion, AnimatePresence, Reorder } from "framer-motion";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { listen, emit } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./Dock.css";
 import { initTheme } from "./theme";
 import { useSettingsSync } from "./hooks/useSettingsSync";
@@ -174,6 +175,7 @@ const Dock = memo(function Dock() {
 	const iconPickerTargetRef = useRef<string | null>(null);
 	const toastTimerRef = useRef<any>(null);
 	const dockRef = useRef<HTMLDivElement>(null);
+	const seenClaudeIdsRef = useRef(new Set<string>());
 	const [popupBottom, setPopupBottom] = useState(56);
 	const pinnedItemsRef = useRef<AppInfo[]>([]);
 	const handleAppClickRef = useRef<(app: AppInfo) => void>(() => {});
@@ -181,6 +183,29 @@ const Dock = memo(function Dock() {
 		parseFloat(localStorage.getItem("bloom-scale") || "1.0")
 	);
 	const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
+
+	useEffect(() => {
+		const unlisten = listen<{ id: string }>("notch-claude", async ({ payload }) => {
+			if (!payload.id || seenClaudeIdsRef.current.has(payload.id)) return;
+			seenClaudeIdsRef.current.add(payload.id);
+			try {
+				const rect = (
+					document.querySelector('.dock-icon-wrapper[data-exe="claude.exe"]') || dockRef.current
+				)?.getBoundingClientRect();
+				if (!rect) return;
+				const win = getCurrentWindow();
+				const pos = await win.outerPosition();
+				const scale = await win.scaleFactor();
+				await emit("claude-fly", {
+					x: pos.x / scale + rect.left + rect.width / 2,
+					y: pos.y / scale + rect.top + rect.height / 2
+				});
+			} catch (_) {}
+		});
+		return () => {
+			unlisten.then((fn) => fn());
+		};
+	}, []);
 
 	useEffect(() => {
 		const onResize = () => setViewportWidth(window.innerWidth);
@@ -1075,6 +1100,7 @@ const Dock = memo(function Dock() {
 										>
 											<motion.div
 												className="dock-icon-wrapper"
+												data-exe={(app.executable || "").toLowerCase()}
 												initial={ITEM_INITIAL}
 												animate={ITEM_ANIMATE}
 												exit={ITEM_EXIT}
@@ -1234,6 +1260,7 @@ const Dock = memo(function Dock() {
 										}}
 										exit={{ opacity: 0, scale: 0, transition: { duration: 0.12 } }}
 										className="dock-icon-wrapper"
+										data-exe={(app.executable || "").toLowerCase()}
 										onContextMenu={(e) => handleContextMenu(e, app)}
 										onMouseEnter={() => setHoveredApp(itemKey(app))}
 										onMouseLeave={() => {

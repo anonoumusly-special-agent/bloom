@@ -593,8 +593,10 @@ function OverlayApp() {
 		return initTheme();
 	}, []);
 
-	type Mode = "idle" | "volume" | "brightness" | "splash" | "updating";
+	type Mode = "idle" | "volume" | "brightness" | "splash" | "updating" | "claude-fly";
 	const [mode, setMode] = useState<Mode>("idle");
+	const modeRef = useRef<Mode>("idle");
+	const [claudeFlyStart, setClaudeFlyStart] = useState<{ x: number; y: number } | null>(null);
 	const [updateStatus, setUpdateStatus] = useState<string>("checking");
 	const [updateProgress, setUpdateProgress] = useState(0);
 
@@ -627,8 +629,23 @@ function OverlayApp() {
 	);
 	const timeoutRef = useRef<any>(null);
 	const hideWindowTimeoutRef = useRef<any>(null);
+	const claudeFlyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const splashActiveRef = useRef(false);
 	const mixerExpandedRef = useRef(false);
+
+	useEffect(() => {
+		modeRef.current = mode;
+	}, [mode]);
+
+	const finishClaudeFly = useCallback(() => {
+		if (modeRef.current !== "claude-fly") return;
+		if (claudeFlyTimeoutRef.current) clearTimeout(claudeFlyTimeoutRef.current);
+		claudeFlyTimeoutRef.current = null;
+		modeRef.current = "idle";
+		splashActiveRef.current = false;
+		setMode("idle");
+		invoke("set_splash_fullscreen", { fullscreen: false });
+	}, []);
 
 	const resetHideTimeout = useCallback(() => {
 		// Keep the notch pinned while the mixer panel is open; it closes on
@@ -720,6 +737,24 @@ function OverlayApp() {
 	}, []);
 
 	// ── Event Listeners ──
+	useEffect(() => {
+		const claudeFlyPromise = listen<{ x: number; y: number }>("claude-fly", ({ payload }) => {
+			if (modeRef.current !== "idle" || splashActiveRef.current) return;
+			// ponytail: Screen coordinates assume the primary monitor starts at 0,0; account for its origin for multi-monitor layouts.
+			setClaudeFlyStart({ x: payload.x, y: payload.y });
+			modeRef.current = "claude-fly";
+			splashActiveRef.current = true;
+			if (timeoutRef.current) clearTimeout(timeoutRef.current);
+			invoke("set_splash_fullscreen", { fullscreen: true });
+			setMode("claude-fly");
+			claudeFlyTimeoutRef.current = setTimeout(finishClaudeFly, 2000);
+		});
+		return () => {
+			claudeFlyPromise.then((fn) => fn());
+			if (claudeFlyTimeoutRef.current) clearTimeout(claudeFlyTimeoutRef.current);
+		};
+	}, [finishClaudeFly]);
+
 	useEffect(() => {
 		const preventContext = (e: MouseEvent) => e.preventDefault();
 		document.addEventListener("contextmenu", preventContext);
@@ -924,6 +959,51 @@ function OverlayApp() {
 
 	return (
 		<div className="overlay-container">
+			{mode === "claude-fly" && claudeFlyStart && (
+				<div
+					style={{ position: "fixed", inset: 0, pointerEvents: "none", background: "transparent" }}
+				>
+					<motion.div
+						style={{
+							position: "absolute",
+							width: 16,
+							height: 16,
+							borderRadius: "50%",
+							background: "#D97757",
+							boxShadow: "0 0 18px 4px rgba(217,119,87,0.7)"
+						}}
+						transformTemplate={(_, transform) =>
+							`translate(-50%, -50%)${transform === "none" ? "" : ` ${transform}`}`
+						}
+						initial={{
+							left: claudeFlyStart.x,
+							top: claudeFlyStart.y,
+							scale: 0,
+							opacity: 0,
+							rotate: 0
+						}}
+						animate={{
+							left: [
+								claudeFlyStart.x,
+								claudeFlyStart.x,
+								claudeFlyStart.x,
+								window.innerWidth / 2,
+								window.innerWidth / 2
+							],
+							top: [claudeFlyStart.y, claudeFlyStart.y, claudeFlyStart.y, 18, 18],
+							scale: [0, 1.1, 1, 1, 0.2],
+							opacity: [0, 1, 1, 1, 0],
+							rotate: [0, 0, 0, 360, 540]
+						}}
+						transition={{
+							duration: 1.1,
+							times: [0, 0.2, 0.3, 0.85, 1],
+							ease: ["easeOut", "easeInOut", "easeInOut", "linear"]
+						}}
+						onAnimationComplete={finishClaudeFly}
+					/>
+				</div>
+			)}
 			{/* Splash Screen */}
 			<AnimatePresence>
 				{mode === "splash" && (
@@ -980,7 +1060,7 @@ function OverlayApp() {
 			</AnimatePresence>
 
 			{/* Volume / Brightness Overlay */}
-			{mode !== "splash" && mode !== "updating" && (
+			{mode !== "splash" && mode !== "updating" && mode !== "claude-fly" && (
 				<div
 					style={{
 						zoom: scale,

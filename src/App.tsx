@@ -1112,15 +1112,17 @@ function App() {
 	useEffect(() => {
 		if (windowLabel !== "main") return;
 		const unlistenEvent = listen<ClaudeNotchEvent>("notch-claude", ({ payload }) => {
-			setClaudeEvents((events) => {
-				if (events.some((event) => event.id === payload.id)) return events;
-				const next = [...events, payload];
-				// ponytail: More than 10 live approvals can grow this queue; persist it if that becomes common.
-				const waitingDone = next.findIndex((event, index) => index > 0 && event.type === "done");
-				if (next.length > 10 && waitingDone > 0) next.splice(waitingDone, 1);
-				return next;
-			});
-			if (notchMode === "peek") triggerEventPeek(6000);
+			setTimeout(() => {
+				setClaudeEvents((events) => {
+					if (events.some((event) => event.id === payload.id)) return events;
+					const next = [...events, payload];
+					// ponytail: More than 10 live approvals can grow this queue; persist it if that becomes common.
+					const waitingDone = next.findIndex((event, index) => index > 0 && event.type === "done");
+					if (next.length > 10 && waitingDone > 0) next.splice(waitingDone, 1);
+					return next;
+				});
+				if (notchMode === "peek") triggerEventPeek(6000);
+			}, 1000);
 		});
 		const unlistenGone = listen<{ id: string }>("notch-claude-gone", ({ payload }) => {
 			dismissClaude(payload.id);
