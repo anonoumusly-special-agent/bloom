@@ -2,6 +2,7 @@
 
 mod commands;
 mod claude_notch;
+mod claude_toasts;
 mod fps;
 mod fps_stats;
 mod gaming;

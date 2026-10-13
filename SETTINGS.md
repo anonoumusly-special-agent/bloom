@@ -49,6 +49,8 @@ Edit `settings.json` with any text editor while Bloom is running. Changes are ap
 | `bloom-claude-notch-enabled` | `"true"` / `"false"` | `"false"` | Show Claude Code task updates and approval requests in the notch. |
 | `bloom-claude-notch-path` | directory path string | `"S:\\tools\\claude-notch\\spool"` | Directory containing Claude Code notification JSON files and decision files. |
 
+If the Claude spool server is disconnected, Bloom shows Claude desktop Windows notifications without approval controls when notification access is available.
+
 ### Weather
 
 | Key                              | Type                         | Default     | Description                                                                        |

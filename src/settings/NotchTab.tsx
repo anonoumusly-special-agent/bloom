@@ -140,6 +140,9 @@ export function NotchTab({
 						<span className="slider" />
 					</label>
 				</SettingRow>
+				<p className="setting-desc" style={{ margin: "8px 14px 8px 54px" }}>
+					Falls der Server nicht verbunden ist, zeigt Bloom die Windows-Mitteilungen der Claude-App an (ohne Erlauben/Ablehnen).
+				</p>
 				{claudeNotchEnabled && (
 					<SettingRow icon={Terminal} label="Spool path" desc="Claude Code notification folder">
 						<input

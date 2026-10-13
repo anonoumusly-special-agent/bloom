@@ -1,6 +1,6 @@
 [package]
 name = "bloom"
-version = "3.10.0"
+version = "3.10.1"
 description = ""
 authors = ["sehaz"]
 edition = "2021"
@@ -58,7 +58,11 @@ windows = { version = "0.61", features = [
 	"System_Power",
 	"Win32_NetworkManagement_IpHelper",
 	"Win32_NetworkManagement_Ndis",
-	"Win32_NetworkManagement_WiFi"
+	"Win32_NetworkManagement_WiFi",
+	"ApplicationModel",
+	"Foundation_Collections",
+	"UI_Notifications",
+	"UI_Notifications_Management"
 ] }
 base64 = "0.22"
 tauri-plugin-autostart = "2.5.1"

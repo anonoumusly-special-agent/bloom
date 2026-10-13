@@ -1125,9 +1125,15 @@ function App() {
 		const unlistenGone = listen<{ id: string }>("notch-claude-gone", ({ payload }) => {
 			dismissClaude(payload.id);
 		});
+		const unlistenStatus = listen<{ connected: boolean }>("notch-claude-status", ({ payload }) => {
+			if (!payload.connected && localStorage.getItem("bloom-claude-notch-enabled") === "true") {
+				setClaudeEvents((events) => events.filter((event) => event.type !== "ask"));
+			}
+		});
 		return () => {
 			unlistenEvent.then((fn) => fn());
 			unlistenGone.then((fn) => fn());
+			unlistenStatus.then((fn) => fn());
 		};
 	}, [windowLabel, notchMode, triggerEventPeek, dismissClaude]);
 
