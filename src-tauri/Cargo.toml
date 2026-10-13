@@ -1,6 +1,6 @@
 [package]
 name = "bloom"
-version = "3.10.4"
+version = "3.10.5"
 description = ""
 authors = ["sehaz"]
 edition = "2021"

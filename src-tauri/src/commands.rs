@@ -403,38 +403,18 @@ pub async fn change_notch_mode(app: AppHandle, mode: String) {
 }
 
 fn get_uwp_launch_cmd(exe_path: &str) -> Option<String> {
-    let path = std::path::Path::new(exe_path);
-    let mut is_windows_apps = false;
-    let mut package_folder = String::new();
+    use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_MULTITHREADED};
 
-    for component in path.components() {
-        if let std::path::Component::Normal(s) = component {
-            let s_str = s.to_string_lossy();
-            if is_windows_apps {
-                package_folder = s_str.to_string();
-                break;
-            }
-            if s_str.eq_ignore_ascii_case("WindowsApps") {
-                is_windows_apps = true;
-            }
-        }
+    let family = package_family_from_windows_apps_path(exe_path)?;
+    let com_initialized = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED).is_ok() };
+    let aumid = find_aumid_by_family(&family);
+    if com_initialized {
+        unsafe { CoUninitialize() };
     }
-
-    if !package_folder.is_empty() {
-        // package_folder format: PackageName_Version_Architecture__PublisherId
-        // We want: PackageName_PublisherId!App
-        if let Some(publisher_idx) = package_folder.rfind("__") {
-            let publisher_id = &package_folder[publisher_idx + 2..];
-            if let Some(first_underscore) = package_folder.find('_') {
-                let package_name = &package_folder[..first_underscore];
-                return Some(format!(
-                    "shell:AppsFolder\\{}_{}!App",
-                    package_name, publisher_id
-                ));
-            }
-        }
-    }
-    None
+    Some(format!(
+        "shell:AppsFolder\\{}",
+        aumid.unwrap_or_else(|| format!("{family}!App"))
+    ))
 }
 
 /// Duplicate-event guard. Kept well below the double-click interval so a
@@ -789,8 +769,9 @@ fn launch_path(path: &str) {
                     "Failed to open UWP app {}: error code {}",
                     uwp_cmd, res.0 as usize
                 );
+            } else {
+                return;
             }
-            return;
         }
 
         use std::path::Path;
@@ -3896,6 +3877,10 @@ mod pwa_icon_tests {
         assert_eq!(
             package_family_from_windows_apps_path("C:\\Program Files\\WindowsApps\\5319275A.WhatsAppDesktop_2.2634.101.0_x64__cv1g1gvanyjgm\\WhatsApp.Root.exe").as_deref(),
             Some("5319275A.WhatsAppDesktop_cv1g1gvanyjgm")
+        );
+        assert_eq!(
+            package_family_from_windows_apps_path("C:\\Program Files\\WindowsApps\\Raycast.Raycast_2.7.3.0_x64__qypenmj9wpt2a\\Raycast\\Raycast.exe").as_deref(),
+            Some("Raycast.Raycast_qypenmj9wpt2a")
         );
         assert_eq!(
             package_family_from_windows_apps_path("C:\\Windows\\explorer.exe"),
