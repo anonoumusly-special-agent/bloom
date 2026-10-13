@@ -26,7 +26,7 @@ pub fn poll_new(seen: &mut HashSet<u32>) -> Vec<(u32, String, String)> {
         if state.is_none() {
             let listener = (|| {
                 unsafe {
-                    CoInitializeEx(None, COINIT_MULTITHREADED).ok()?;
+                    let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
                 }
                 let listener = UserNotificationListener::Current().ok()?;
                 if listener.RequestAccessAsync().ok()?.get().ok()?
