@@ -46,6 +46,8 @@ Edit `settings.json` with any text editor while Bloom is running. Changes are ap
 | ------------------------ | -------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | `bloom-notch-mode`       | `"fixed"` / `"smart"` / `"peek"` | `"fixed"` | Notch (top bar) visibility behavior. Same modes as dock. **peek** shows the notch briefly on media events and notifications.   |
 | `bloom-notch-edge-delay` | milliseconds `"0"`–`"2000"`      | `"200"`   | In smart/peek mode, how long the cursor must rest against the top screen edge before the notch peeks. `"0"` reveals instantly. |
+| `bloom-claude-notch-enabled` | `"true"` / `"false"` | `"false"` | Show Claude Code task updates and approval requests in the notch. |
+| `bloom-claude-notch-path` | directory path string | `"S:\\tools\\claude-notch\\spool"` | Directory containing Claude Code notification JSON files and decision files. |
 
 ### Weather
 

@@ -7,7 +7,7 @@ import type { UpdateCheckResult } from "../updater";
 import { useSettingsSync } from "../hooks/useSettingsSync";
 import { reloadIfMirrorWasStale } from "../hooks/settingsMirror";
 import { hexToHsl } from "../theme";
-import type { WidgetConfig } from "./types";
+import { CLAUDE_NOTCH_DEFAULT_PATH, type WidgetConfig } from "./types";
 
 function saveSetting(key: string, value: string) {
 	localStorage.setItem(key, value);
@@ -109,6 +109,12 @@ export function useSettings() {
 		return raw === "auto-hide" ? "smart" : raw;
 	});
 	const [notchMode, setNotchMode] = useState("fixed");
+	const [claudeNotchEnabled, setClaudeNotchEnabled] = useState(
+		() => localStorage.getItem("bloom-claude-notch-enabled") === "true"
+	);
+	const [claudeNotchPath, setClaudeNotchPath] = useState(
+		() => localStorage.getItem("bloom-claude-notch-path") || CLAUDE_NOTCH_DEFAULT_PATH
+	);
 	const [notchEdgeDelay, setNotchEdgeDelay] = useState(() => {
 		const val = localStorage.getItem("bloom-notch-edge-delay");
 		return val !== null ? parseInt(val) : 200;
@@ -202,6 +208,8 @@ export function useSettings() {
 			apply(getVal("bloom-low-battery-threshold"), setLowBatteryThreshold, parseInt);
 
 			apply(getVal("bloom-notch-mode"), setNotchMode, (v) => (v === "auto-hide" ? "smart" : v));
+			apply(getVal("bloom-claude-notch-enabled"), setClaudeNotchEnabled, readBool);
+			apply(getVal("bloom-claude-notch-path"), setClaudeNotchPath, (v) => v);
 			apply(getVal("bloom-notch-edge-delay"), setNotchEdgeDelay, parseInt);
 			apply(getVal("bloom-dock-mode"), setDockMode, (v) => (v === "auto-hide" ? "smart" : v));
 
@@ -247,6 +255,8 @@ export function useSettings() {
 	useSettingsSync({
 		"bloom-dock-mode": setDockMode,
 		"bloom-notch-mode": setNotchMode,
+		"bloom-claude-notch-enabled": setClaudeNotchEnabled,
+		"bloom-claude-notch-path": (value) => setClaudeNotchPath(String(value)),
 		"bloom-notch-edge-delay": setNotchEdgeDelay,
 		"bloom-dock-enabled": setDockEnabled,
 		"bloom-tray-corner-enabled": setTrayButtonEnabled,
@@ -419,6 +429,17 @@ export function useSettings() {
 		const next = !calendarEnabled;
 		setCalendarEnabled(next);
 		saveSetting("bloom-calendar-enabled", String(next));
+	};
+
+	const toggleClaudeNotch = () => {
+		const next = !claudeNotchEnabled;
+		setClaudeNotchEnabled(next);
+		saveSetting("bloom-claude-notch-enabled", String(next));
+	};
+
+	const handleClaudeNotchPathChange = (path: string) => {
+		setClaudeNotchPath(path);
+		saveSetting("bloom-claude-notch-path", path);
 	};
 
 	const toggleTimerSound = () => {
@@ -814,6 +835,10 @@ export function useSettings() {
 		// Notch
 		notchMode,
 		setNotchModeValue,
+		claudeNotchEnabled,
+		toggleClaudeNotch,
+		claudeNotchPath,
+		handleClaudeNotchPathChange,
 		notchEdgeDelay,
 		handleNotchEdgeDelayChange,
 		calendarEnabled,

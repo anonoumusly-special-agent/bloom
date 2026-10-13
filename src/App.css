@@ -1540,6 +1540,86 @@ img {
 	opacity: 0.85;
 }
 
+.claude-content {
+	flex-direction: row;
+	align-items: center;
+	gap: 12px;
+}
+
+.claude-dot-grid {
+	flex-shrink: 0;
+	display: grid;
+	grid-template-columns: repeat(4, 3px);
+	gap: 3px;
+	color: #30d158;
+}
+
+.claude-dot-grid.ask {
+	color: #ff9f0a;
+}
+
+.claude-dot-grid i {
+	width: 3px;
+	height: 3px;
+	border-radius: 50%;
+	background: currentColor;
+}
+
+.claude-copy {
+	min-width: 0;
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.claude-sub,
+.claude-project {
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	color: var(--bloom-text-muted, rgba(255, 255, 255, 0.72));
+}
+
+.claude-sub {
+	font: 11px/16px monospace;
+}
+
+.claude-project {
+	font-size: 10px;
+	opacity: 0.7;
+}
+
+.claude-actions {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.claude-actions button {
+	border: none;
+	border-radius: 999px;
+	padding: 5px 10px;
+	font-size: 11px;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.claude-actions button:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+
+.claude-allow {
+	background: var(--bloom-text, white);
+	color: var(--bloom-bg-expanded, black);
+}
+
+.claude-deny {
+	background: var(--bloom-border, rgba(255, 255, 255, 0.12));
+	color: var(--bloom-text, white);
+}
+
 /* Pills Grid */
 .cc-pills-grid {
 	display: grid;

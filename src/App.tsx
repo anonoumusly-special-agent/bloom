@@ -46,6 +46,16 @@ import {
 // Pomodoro timer limit.
 const MAX_TIMER_SECONDS = 180 * 60;
 
+type ClaudeNotchEvent = {
+	id: string;
+	type: "done" | "ask";
+	ts: number;
+	title: string;
+	sub: string;
+	project: string;
+	expires: number | null;
+};
+
 // Inline timer editing: digits fill from the right and the colon is inserted
 // automatically ("130" -> 1:30, "2500" -> 25:00, "45" -> 0:45).
 const timerDigitsToSeconds = (digits: string): number | null => {
@@ -460,6 +470,7 @@ function App() {
 	const lowBatteryPulseShownRef = useRef<boolean>(false);
 
 	const [eventPeek, setEventPeek] = useState(false);
+	const [claudeEvents, setClaudeEvents] = useState<ClaudeNotchEvent[]>([]);
 	const eventPeekTimeoutRef = useRef<any>(null);
 	const updatePulseTimerRef = useRef<any>(null);
 	const triggerEventPeek = useCallback((duration = 3000) => {
@@ -666,6 +677,7 @@ function App() {
 	const isHidden =
 		!startupAnimating &&
 		!gamingActive &&
+		claudeEvents.length === 0 &&
 		((notchMode === "smart" && isOverlapped && interactionState === "none") ||
 			(notchMode === "peek" && interactionState === "none" && !eventPeek));
 
@@ -1033,6 +1045,9 @@ function App() {
 			"bloom-dock-enabled": setDockEnabled,
 			"bloom-dock-mode": setDockMode,
 			"bloom-notch-mode": setNotchMode,
+			"bloom-claude-notch-enabled": (enabled) => {
+				if (!enabled) setClaudeEvents([]);
+			},
 			"bloom-status-widgets": (value) => {
 				try {
 					const parsed = JSON.parse(value);
@@ -1083,10 +1098,84 @@ function App() {
 		invoke("change_notch_mode", { mode: notchMode });
 	}, [notchMode, windowLabel]);
 
-	// Bloom mode state: 'music', 'calendar', 'command-center', 'announcement', or 'status'
+	// Bloom mode state
 	const [bloomMode, setBloomMode] = useState<
-		"music" | "calendar" | "command-center" | "announcement" | "status"
+		"music" | "calendar" | "command-center" | "announcement" | "claude" | "status"
 	>("status");
+	const claudeEvent = claudeEvents[0];
+	const claudePreviousMode = useRef<Exclude<typeof bloomMode, "claude"> | null>(null);
+	const [claudeDecisionPending, setClaudeDecisionPending] = useState(false);
+	const dismissClaude = useCallback((id: string) => {
+		setClaudeEvents((events) => events.filter((event) => event.id !== id));
+	}, []);
+
+	useEffect(() => {
+		if (windowLabel !== "main") return;
+		const unlistenEvent = listen<ClaudeNotchEvent>("notch-claude", ({ payload }) => {
+			setClaudeEvents((events) => {
+				if (events.some((event) => event.id === payload.id)) return events;
+				const next = [...events, payload];
+				// ponytail: More than 10 live approvals can grow this queue; persist it if that becomes common.
+				const waitingDone = next.findIndex((event, index) => index > 0 && event.type === "done");
+				if (next.length > 10 && waitingDone > 0) next.splice(waitingDone, 1);
+				return next;
+			});
+			if (notchMode === "peek") triggerEventPeek(6000);
+		});
+		const unlistenGone = listen<{ id: string }>("notch-claude-gone", ({ payload }) => {
+			dismissClaude(payload.id);
+		});
+		return () => {
+			unlistenEvent.then((fn) => fn());
+			unlistenGone.then((fn) => fn());
+		};
+	}, [windowLabel, notchMode, triggerEventPeek, dismissClaude]);
+
+	useEffect(() => {
+		if (claudeEvents.length) {
+			if (bloomMode !== "claude") {
+				if (claudePreviousMode.current === null) claudePreviousMode.current = bloomMode;
+				setBloomMode("claude");
+			}
+		} else if (claudePreviousMode.current !== null) {
+			let previous = claudePreviousMode.current;
+			if (announcementOpen) previous = "announcement";
+			else if (previous === "announcement") {
+				previous = mediaInfo.has_media && isPlaying ? "music" : "status";
+			}
+			claudePreviousMode.current = null;
+			if (bloomMode === "claude") setBloomMode(previous);
+		}
+	}, [claudeEvents.length, bloomMode, announcementOpen, mediaInfo.has_media, isPlaying]);
+
+	useEffect(() => {
+		if (!claudeEvent) return;
+		if (claudeEvent.type === "done") {
+			const timer = setTimeout(() => dismissClaude(claudeEvent.id), 6000);
+			return () => clearTimeout(timer);
+		}
+		const expires = claudeEvent.expires;
+		if (expires == null) return;
+		const checkExpiry = () => {
+			if (Date.now() / 1000 > expires) dismissClaude(claudeEvent.id);
+		};
+		checkExpiry();
+		const timer = setInterval(checkExpiry, 500);
+		return () => clearInterval(timer);
+	}, [claudeEvent, dismissClaude]);
+
+	const decideClaude = async (id: string, allow: boolean) => {
+		if (claudeDecisionPending) return;
+		setClaudeDecisionPending(true);
+		try {
+			await invoke("notch_claude_decision", { id, allow });
+			dismissClaude(id);
+		} catch (error) {
+			console.error("Claude decision failed:", error);
+		} finally {
+			setClaudeDecisionPending(false);
+		}
+	};
 
 	// Open the notch on an unseen announcement; stays open until dismissed.
 	useEffect(() => {
@@ -1143,8 +1232,8 @@ function App() {
 	// Moves to the next (1) or previous (-1) notch panel. Shared by the scroll
 	// wheel and the panel arrows; returns whether the panel changed.
 	const cycleBloomMode = (direction: 1 | -1) => {
-		// The announcement card is closed explicitly, not cycled away.
-		if (bloomMode === "announcement") return false;
+		// Event cards are dismissed explicitly, not cycled away.
+		if (bloomMode === "announcement" || bloomMode === "claude") return false;
 		const availableModes = getCyclableModes();
 		const currentIndex = availableModes.indexOf(bloomMode);
 		if (currentIndex === -1) return false;
@@ -1336,6 +1425,7 @@ function App() {
 			isPlaying &&
 			bloomMode !== "calendar" &&
 			!announcementOpenRef.current &&
+			bloomMode !== "claude" &&
 			(isNewTrackWhilePlaying || justStartedPlaying)
 		) {
 			// Switch if compact notch display is enabled OR we are hovered
@@ -1914,6 +2004,7 @@ function App() {
 
 	// Calculate width dynamically based on enabled features
 	const getDynamicWidth = () => {
+		if (bloomMode === "claude" && claudeEvent) return 380;
 		if (bloomMode === "announcement" && announcement && !announcementDismissed) return 380;
 		if (isCalendarMode) return 480;
 		if (bloomMode === "command-center" && isHovered) return 350;
@@ -1943,6 +2034,7 @@ function App() {
 		if (!isExpanded || !isVisible || isHidden) {
 			return isImpacted ? 28.9 : 44.2;
 		}
+		if (bloomMode === "claude" && claudeEvent) return 116;
 		// Announcement card: body is line-clamped, so a fixed size fits both cases.
 		if (bloomMode === "announcement" && announcement && !announcementDismissed) {
 			return announcement.url ? 168 : 148;
@@ -1967,7 +2059,7 @@ function App() {
 	// Arrows beside the time switch panels once the open notch has been clicked,
 	// for mice without a scroll wheel. Hover alone keeps the notch uncluttered.
 	const showPanelArrows =
-		isHovered && notchClicked && bloomMode !== "announcement" && getCyclableModes().length > 1;
+		isHovered && notchClicked && bloomMode !== "announcement" && bloomMode !== "claude" && getCyclableModes().length > 1;
 
 	// Close compact media player expansions when notch is unhovered or mode changes
 	useEffect(() => {
@@ -2043,7 +2135,7 @@ function App() {
 					onClickCapture={() => setNotchClicked(true)}
 					onHoverStart={() => {
 						setIsHovered(true);
-						if (bloomMode !== "announcement") {
+						if (bloomMode !== "announcement" && bloomMode !== "claude") {
 							setBloomMode(mediaInfo.has_media && isPlaying ? "music" : "status");
 						}
 					}}
@@ -2985,6 +3077,47 @@ function App() {
 												>
 													Learn more
 												</button>
+											)}
+										</motion.div>
+									)}
+								</AnimatePresence>
+
+								{/* Claude Code Card */}
+								<AnimatePresence>
+									{bloomMode === "claude" && claudeEvent && (
+										<motion.div
+											key={claudeEvent.id}
+											className="announcement-content claude-content"
+											onClick={(event) => event.stopPropagation()}
+											initial={{ opacity: 0 }}
+											animate={{ opacity: 1 }}
+											exit={{ opacity: 0, filter: "blur(4px)", transition: { duration: 0.1 } }}
+										>
+											<div className={`claude-dot-grid ${claudeEvent.type}`} aria-hidden="true">
+												{Array.from({ length: 16 }, (_, index) => <i key={index} />)}
+											</div>
+											<div className="claude-copy">
+												<span className="announcement-title">{claudeEvent.title}</span>
+												<span className="claude-sub">{claudeEvent.sub}</span>
+												<span className="claude-project">{claudeEvent.project}</span>
+											</div>
+											{claudeEvent.type === "ask" && (
+												<div className="claude-actions">
+													<button
+														disabled={claudeDecisionPending}
+														className="claude-allow"
+														onClick={() => decideClaude(claudeEvent.id, true)}
+													>
+														Allow
+													</button>
+													<button
+														disabled={claudeDecisionPending}
+														className="claude-deny"
+														onClick={() => decideClaude(claudeEvent.id, false)}
+													>
+														Deny
+													</button>
+												</div>
 											)}
 										</motion.div>
 									)}

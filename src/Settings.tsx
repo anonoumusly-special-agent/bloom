@@ -159,6 +159,10 @@ function SettingsApp() {
 						<NotchTab
 							notchMode={settings.notchMode}
 							setNotchModeValue={settings.setNotchModeValue}
+							claudeNotchEnabled={settings.claudeNotchEnabled}
+							toggleClaudeNotch={settings.toggleClaudeNotch}
+							claudeNotchPath={settings.claudeNotchPath}
+							handleClaudeNotchPathChange={settings.handleClaudeNotchPathChange}
 							notchEdgeDelay={settings.notchEdgeDelay}
 							handleNotchEdgeDelayChange={settings.handleNotchEdgeDelayChange}
 							calendarEnabled={settings.calendarEnabled}

@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod claude_notch;
 mod fps;
 mod fps_stats;
 mod gaming;
@@ -152,6 +153,7 @@ fn main() {
             set_volume_mixer_rect,
             clear_volume_mixer_rect,
             save_setting,
+            claude_notch::notch_claude_decision,
             load_settings,
             settings_file_readable,
             capture_window_thumbnail,
@@ -185,6 +187,7 @@ fn main() {
             // invoke save_setting as soon as it loads, which happens before the
             // rest of this hook runs.
             crate::utils::init_settings_cache(app.handle());
+            claude_notch::start(app.handle().clone());
             // Crash-recovery: if a previous session was force-killed while the native
             // taskbar was hidden, restore it now. Runs before the frontend re-hides it
             // (init_dock fires after a delay), so the flag must be removed first.

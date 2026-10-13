@@ -9,6 +9,7 @@ import {
 	Circle,
 	CloudSun,
 	Timer,
+	Terminal,
 	X
 } from "lucide-react";
 import { SettingRow } from "./SettingRow";
@@ -18,6 +19,10 @@ import type { WidgetConfig } from "./types";
 interface NotchTabProps {
 	notchMode: string;
 	setNotchModeValue: (mode: string) => void;
+	claudeNotchEnabled: boolean;
+	toggleClaudeNotch: () => void;
+	claudeNotchPath: string;
+	handleClaudeNotchPathChange: (path: string) => void;
 	notchEdgeDelay: number;
 	handleNotchEdgeDelayChange: (val: number) => void;
 	calendarEnabled: boolean;
@@ -57,6 +62,10 @@ interface NotchTabProps {
 export function NotchTab({
 	notchMode,
 	setNotchModeValue,
+	claudeNotchEnabled,
+	toggleClaudeNotch,
+	claudeNotchPath,
+	handleClaudeNotchPathChange,
 	notchEdgeDelay,
 	handleNotchEdgeDelayChange,
 	calendarEnabled,
@@ -121,6 +130,25 @@ export function NotchTab({
 							value={notchEdgeDelay}
 							onChange={(e) => handleNotchEdgeDelayChange(parseInt(e.target.value))}
 							className="settings-slider"
+						/>
+					</SettingRow>
+				)}
+
+				<SettingRow icon={Terminal} label="Claude Code notifications" desc="Show task updates and approval requests">
+					<label className="toggle-switch">
+						<input type="checkbox" checked={claudeNotchEnabled} onChange={toggleClaudeNotch} />
+						<span className="slider" />
+					</label>
+				</SettingRow>
+				{claudeNotchEnabled && (
+					<SettingRow icon={Terminal} label="Spool path" desc="Claude Code notification folder">
+						<input
+							type="text"
+							name="bloom-claude-notch-path"
+							className="gaming-path-input"
+							aria-label="Claude Code spool path"
+							value={claudeNotchPath}
+							onChange={(event) => handleClaudeNotchPathChange(event.target.value)}
 						/>
 					</SettingRow>
 				)}

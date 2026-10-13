@@ -5,6 +5,8 @@ export interface WidgetConfig {
 	right: string[];
 }
 
+export const CLAUDE_NOTCH_DEFAULT_PATH = "S:\\tools\\claude-notch\\spool";
+
 export type SettingsTab = "general" | "appearance" | "notch" | "dock" | "gaming" | "overlays" | "about";
 
 export interface SettingRowProps {
