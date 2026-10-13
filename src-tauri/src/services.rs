@@ -303,8 +303,8 @@ pub fn setup_window_change_hook(app_handle: AppHandle) {
 
         use windows::Win32::UI::Accessibility::SetWinEventHook;
         use windows::Win32::UI::WindowsAndMessaging::{
-            EVENT_OBJECT_CREATE, EVENT_OBJECT_DESTROY, EVENT_OBJECT_HIDE, EVENT_OBJECT_SHOW,
-            WINEVENT_OUTOFCONTEXT,
+            EVENT_OBJECT_CLOAKED, EVENT_OBJECT_CREATE, EVENT_OBJECT_DESTROY, EVENT_OBJECT_HIDE,
+            EVENT_OBJECT_SHOW, EVENT_OBJECT_UNCLOAKED, WINEVENT_OUTOFCONTEXT,
         };
 
         // Hook create and destroy events for top-level windows
@@ -345,6 +345,15 @@ pub fn setup_window_change_hook(app_handle: AppHandle) {
             0,
             WINEVENT_OUTOFCONTEXT,
         );
+        let _cloak_hook = SetWinEventHook(
+            EVENT_OBJECT_CLOAKED,
+            EVENT_OBJECT_UNCLOAKED,
+            None,
+            Some(window_change_event_proc),
+            0,
+            0,
+            WINEVENT_OUTOFCONTEXT,
+        );
 
         // Store hooks to prevent them from being dropped
         Box::leak(Box::new(_create_hook));
@@ -368,12 +377,15 @@ unsafe extern "system" fn window_change_event_proc(
     // state may have changed. Cheap flag; the worker thread does the scan.
     {
         use windows::Win32::UI::WindowsAndMessaging::{
-            EVENT_OBJECT_DESTROY, EVENT_OBJECT_HIDE, EVENT_OBJECT_SHOW,
+            EVENT_OBJECT_CLOAKED, EVENT_OBJECT_DESTROY, EVENT_OBJECT_HIDE, EVENT_OBJECT_SHOW,
+            EVENT_OBJECT_UNCLOAKED,
         };
         if id_object == 0
             && id_child == 0
             && (event == EVENT_OBJECT_SHOW
                 || event == EVENT_OBJECT_HIDE
+                || event == EVENT_OBJECT_CLOAKED
+                || event == EVENT_OBJECT_UNCLOAKED
                 || event == EVENT_OBJECT_DESTROY)
         {
             CAPTURE_RECHECK.store(true, Ordering::Relaxed);
@@ -381,15 +393,22 @@ unsafe extern "system" fn window_change_event_proc(
     }
 
     use windows::Win32::UI::WindowsAndMessaging::{
-        GetWindowLongW, GetWindowThreadProcessId, IsWindow, GWL_EXSTYLE, WS_EX_TOOLWINDOW,
+        GetWindowLongW, GetWindowThreadProcessId, IsWindow, EVENT_OBJECT_DESTROY, GWL_EXSTYLE,
+        WS_EX_TOOLWINDOW,
     };
 
-    if !IsWindow(Some(hwnd)).as_bool() {
+    let window_exists = IsWindow(Some(hwnd)).as_bool();
+    // Destroy events can arrive after the handle is gone; still refresh the dock.
+    if !window_exists && (event != EVENT_OBJECT_DESTROY || id_object != 0 || id_child != 0) {
         return;
     }
 
     // Skip tool windows (docks, trays, etc.)
-    let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
+    let ex_style = if window_exists {
+        GetWindowLongW(hwnd, GWL_EXSTYLE) as u32
+    } else {
+        0
+    };
     if (ex_style & WS_EX_TOOLWINDOW.0) != 0 {
         return;
     }
@@ -397,7 +416,9 @@ unsafe extern "system" fn window_change_event_proc(
     // Skip our own process
     let my_pid = std::process::id();
     let mut pid = 0u32;
-    GetWindowThreadProcessId(hwnd, Some(&mut pid));
+    if window_exists {
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+    }
     if pid == my_pid {
         return;
     }
@@ -3455,43 +3476,37 @@ unsafe fn dialog_has_tab_control(hwnd: HWND) -> bool {
     found
 }
 
+pub(crate) unsafe fn is_visible_app_window(hwnd: HWND) -> bool {
+    if !IsWindowVisible(hwnd).as_bool() {
+        return false;
+    }
+    // IsWindowVisible also reports cloaked windows on other virtual desktops.
+    let mut cloaked = 0u32;
+    if windows::Win32::Graphics::Dwm::DwmGetWindowAttribute(
+        hwnd,
+        windows::Win32::Graphics::Dwm::DWMWA_CLOAKED,
+        &mut cloaked as *mut _ as *mut _,
+        std::mem::size_of::<u32>() as u32,
+    )
+    .is_ok()
+        && cloaked != 0
+    {
+        return false;
+    }
+    let mut title = [0u16; 512];
+    windows::Win32::UI::WindowsAndMessaging::GetWindowTextW(hwnd, &mut title) > 0
+        && (GetWindowLongW(hwnd, GWL_EXSTYLE) as u32 & WS_EX_TOOLWINDOW.0) == 0
+}
+
 pub unsafe extern "system" fn enum_windows_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
     let apps = &mut *(lparam.0 as *mut Vec<AppInfo>);
 
-    if IsWindowVisible(hwnd).as_bool() {
-        // DWM-cloaked windows are not actually on screen: closed/suspended UWP
-        // apps keep a cloaked frame alive, and windows on other virtual desktops
-        // are shell-cloaked. Neither belongs in the dock. IsWindowVisible stays
-        // true for them, so this needs the DWM check.
-        {
-            let mut cloaked = 0u32;
-            let size = std::mem::size_of::<u32>() as u32;
-            if windows::Win32::Graphics::Dwm::DwmGetWindowAttribute(
-                hwnd,
-                windows::Win32::Graphics::Dwm::DWMWA_CLOAKED,
-                &mut cloaked as *mut _ as *mut _,
-                size,
-            )
-            .is_ok()
-                && cloaked != 0
-            {
-                return true.into();
-            }
-        }
+    if is_visible_app_window(hwnd) {
 
         let mut text = [0u16; 512];
         let len = windows::Win32::UI::WindowsAndMessaging::GetWindowTextW(hwnd, &mut text);
         if len > 0 {
             let title = String::from_utf16_lossy(&text[..len as usize]);
-
-            let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
-
-            // Basic filter for top-level app windows
-            // We include windows without captions if they don't have the ToolWindow style,
-            // as many games and modern apps (like Spotify/Valorant) lack WS_CAPTION.
-            if (ex_style & WS_EX_TOOLWINDOW.0) != 0 {
-                return true.into();
-            }
 
             // Filter out system containers and background stuff
             if title == "Program Manager" || title == "Bloom" || title == "Bloom Dock" {
