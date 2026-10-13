@@ -1122,7 +1122,7 @@ function App() {
 					return next;
 				});
 				if (notchMode === "peek") triggerEventPeek(6000);
-			}, 1000);
+			}, 2100);
 		});
 		const unlistenGone = listen<{ id: string }>("notch-claude-gone", ({ payload }) => {
 			dismissClaude(payload.id);

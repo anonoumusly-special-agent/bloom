@@ -654,7 +654,7 @@ function OverlayApp() {
 		if (timeoutRef.current) clearTimeout(timeoutRef.current);
 		timeoutRef.current = setTimeout(() => {
 			if (!splashActiveRef.current) setMode("idle");
-		}, 2000);
+		}, 3500);
 	}, []);
 
 	// Load scale from settings
@@ -747,7 +747,7 @@ function OverlayApp() {
 			if (timeoutRef.current) clearTimeout(timeoutRef.current);
 			invoke("set_splash_fullscreen", { fullscreen: true });
 			setMode("claude-fly");
-			claudeFlyTimeoutRef.current = setTimeout(finishClaudeFly, 2000);
+			claudeFlyTimeoutRef.current = setTimeout(finishClaudeFly, 3500);
 		});
 		return () => {
 			claudeFlyPromise.then((fn) => fn());
@@ -966,11 +966,12 @@ function OverlayApp() {
 					<motion.div
 						style={{
 							position: "absolute",
-							width: 16,
-							height: 16,
+							width: 28,
+							height: 28,
 							borderRadius: "50%",
 							background: "#D97757",
-							boxShadow: "0 0 18px 4px rgba(217,119,87,0.7)"
+							border: "2px solid white",
+							boxShadow: "0 0 28px 10px rgba(217,119,87,0.85)"
 						}}
 						transformTemplate={(_, transform) =>
 							`translate(-50%, -50%)${transform === "none" ? "" : ` ${transform}`}`
@@ -996,8 +997,8 @@ function OverlayApp() {
 							rotate: [0, 0, 0, 360, 540]
 						}}
 						transition={{
-							duration: 1.1,
-							times: [0, 0.2, 0.3, 0.85, 1],
+							duration: 2.4,
+							times: [0, 0.12, 0.3, 0.85, 1],
 							ease: ["easeOut", "easeInOut", "easeInOut", "linear"]
 						}}
 						onAnimationComplete={finishClaudeFly}
