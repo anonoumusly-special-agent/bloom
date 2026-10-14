@@ -4,32 +4,63 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { AppInfo } from "./dockApps";
+import { reloadIfMirrorWasStale } from "./hooks/settingsMirror";
 import { useSettingsSync } from "./hooks/useSettingsSync";
 import { initTheme } from "./theme";
+
+const HIDDEN_KEY = "bloom-launchpad-hidden";
+
+function readHiddenPaths(value: string | null): Set<string> {
+	try {
+		const parsed: unknown = JSON.parse(value || "[]");
+		return new Set(Array.isArray(parsed) ? parsed.filter((path): path is string => typeof path === "string") : []);
+	} catch {
+		return new Set();
+	}
+}
 
 export default function Launchpad() {
 	const [apps, setApps] = useState<AppInfo[]>([]);
 	const [icons, setIcons] = useState<Record<string, string>>({});
 	const [search, setSearch] = useState("");
+	const [editing, setEditing] = useState(false);
+	const [hiddenPaths, setHiddenPaths] = useState(() => readHiddenPaths(localStorage.getItem(HIDDEN_KEY)));
 	const [open, setOpen] = useState(false);
 	const [loading, setLoading] = useState(true);
 	const inputRef = useRef<HTMLInputElement>(null);
 	const openRef = useRef(false);
 	const requestedIcons = useRef(new Set<string>());
 	const scanSeq = useRef(0);
-	useSettingsSync({});
+	useSettingsSync({ [HIDDEN_KEY]: (value) => {
+		localStorage.setItem(HIDDEN_KEY, String(value));
+		setHiddenPaths(readHiddenPaths(String(value)));
+	} });
 
 	const filtered = useMemo(() => {
 		const query = search.trim().toLocaleLowerCase();
-		return query ? apps.filter((app) => app.name.toLocaleLowerCase().includes(query)) : apps;
-	}, [apps, search]);
+		return apps.filter((app) => editing || (!hiddenPaths.has(app.path) && (!query || app.name.toLocaleLowerCase().includes(query))));
+	}, [apps, search, editing, hiddenPaths]);
 
 	useEffect(() => {
 		return initTheme();
 	}, []);
 
 	useEffect(() => {
-		if (open) inputRef.current?.focus();
+		if (open && !editing) inputRef.current?.focus();
+	}, [open, editing]);
+
+	useEffect(() => {
+		if (!open) return;
+		let active = true;
+		const mirrored = localStorage.getItem(HIDDEN_KEY);
+		void invoke<Record<string, string>>("load_settings").then(async (settings) => {
+			if (await reloadIfMirrorWasStale(settings)) return;
+			if (!active || localStorage.getItem(HIDDEN_KEY) !== mirrored) return;
+			const value = settings[HIDDEN_KEY] ?? mirrored;
+			if (value !== null) localStorage.setItem(HIDDEN_KEY, value);
+			setHiddenPaths(readHiddenPaths(value));
+		}).catch((error) => console.error("Failed to load Launchpad settings:", error));
+		return () => { active = false; };
 	}, [open]);
 
 	useEffect(() => {
@@ -56,6 +87,7 @@ export default function Launchpad() {
 		const shown = () => {
 			openRef.current = true;
 			setOpen(true);
+			setEditing(false);
 			setSearch("");
 			setLoading(true);
 			void loadApps(true);
@@ -63,6 +95,7 @@ export default function Launchpad() {
 		const hidden = () => {
 			openRef.current = false;
 			setOpen(false);
+			setEditing(false);
 			setSearch("");
 		};
 		const unlisten = listen<boolean>("launchpad-visibility", ({ payload }) => {
@@ -103,8 +136,19 @@ export default function Launchpad() {
 	const hide = () => {
 		openRef.current = false;
 		setOpen(false);
+		setEditing(false);
 		setSearch("");
 		void invoke("hide_launchpad").catch(console.error);
+	};
+
+	const toggleHidden = (path: string) => {
+		const next = new Set(hiddenPaths);
+		if (next.has(path)) next.delete(path);
+		else next.add(path);
+		setHiddenPaths(next);
+		const value = JSON.stringify([...next]);
+		localStorage.setItem(HIDDEN_KEY, value);
+		void invoke("save_setting", { key: HIDDEN_KEY, value }).catch(console.error);
 	};
 
 	useEffect(() => {
@@ -112,8 +156,9 @@ export default function Launchpad() {
 			if (!openRef.current) return;
 			if (event.key === "Escape") {
 				event.preventDefault();
-				hide();
-			} else if (event.key === "Enter" && filtered[0]) {
+				if (editing) setEditing(false);
+				else hide();
+			} else if (event.key === "Enter" && !editing && filtered[0] && event.target === inputRef.current) {
 				event.preventDefault();
 				void launch(filtered[0]);
 			}
@@ -157,14 +202,21 @@ export default function Launchpad() {
 						transition={{ duration: 0.18 }}
 						aria-label="Launchpad"
 					>
-						<input
-							ref={inputRef}
-							className="launchpad-search"
-							aria-label="Apps suchen"
-							placeholder="Apps suchen"
-							value={search}
-							onChange={(event) => setSearch(event.target.value)}
-						/>
+						<div className="launchpad-controls">
+							<input
+								ref={inputRef}
+								className="launchpad-search"
+								aria-label="Apps suchen"
+								placeholder="Apps suchen"
+								value={search}
+								disabled={editing}
+								onChange={(event) => setSearch(event.target.value)}
+							/>
+							<button type="button" className="launchpad-edit" onClick={() => {
+								setSearch("");
+								setEditing(!editing);
+							}}>{editing ? "Fertig" : "Anpassen"}</button>
+						</div>
 						<div className="launchpad-apps">
 							{filtered.length ? (
 								<div className="launchpad-grid">
@@ -172,12 +224,15 @@ export default function Launchpad() {
 										<button
 											type="button"
 											key={`${app.path}::${app.name}`}
-											className="launchpad-app"
+											className={`launchpad-app${editing && hiddenPaths.has(app.path) ? " is-hidden" : ""}`}
 											data-path={app.path}
-											onClick={() => void launch(app)}
+											aria-label={editing ? `${app.name} ${hiddenPaths.has(app.path) ? "einblenden" : "ausblenden"}` : app.name}
+											aria-pressed={editing ? !hiddenPaths.has(app.path) : undefined}
+											onClick={() => editing ? toggleHidden(app.path) : void launch(app)}
 										>
 											<span className="launchpad-icon">
 												{icons[app.path] ? <img src={icons[app.path]} alt="" draggable={false} /> : app.name[0]}
+												{editing && <span className="launchpad-badge" aria-hidden="true">{hiddenPaths.has(app.path) ? "×" : "✓"}</span>}
 											</span>
 											<span className="launchpad-name">{app.name}</span>
 										</button>

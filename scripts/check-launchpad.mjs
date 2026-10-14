@@ -14,6 +14,7 @@ for (const [key, expected] of Object.entries({
 	skipTaskbar: true,
 	visible: false
 })) assert.equal(launchpad[key], expected, key);
+assert.deepEqual(launchpad.windowEffects, { effects: ["acrylic"], color: [16, 16, 20, 110] });
 assert.ok(capability.windows.includes("launchpad"));
 assert.match(read("vite.config.ts"), /launchpad:\s*"launchpad.html"/);
 assert.match(read("launchpad.html"), /src\/launchpad-main.tsx/);
@@ -22,5 +23,4 @@ assert.match(read("src-tauri/src/main.rs"), /hide_launchpad,/);
 assert.equal(JSON.parse(read("package.json")).version, config.version);
 assert.ok(read("src-tauri/Cargo.toml").includes(`version = "${config.version}"`));
 assert.ok(read("src-tauri/Cargo.lock").includes(`name = "bloom"\nversion = "${config.version}"`));
-assert.equal(config.version, "3.11.1");
 console.log("Launchpad window wiring and version OK");

@@ -15,14 +15,12 @@ body,
 	inset: 0;
 	display: flex;
 	justify-content: center;
-	background: rgba(8, 12, 20, 0.7);
-	backdrop-filter: blur(36px) saturate(1.2);
-	-webkit-backdrop-filter: blur(36px) saturate(1.2);
+	background: rgba(10, 10, 14, 0.25);
 	color: var(--bloom-text, white);
 }
 
 .light-mode .launchpad-backdrop {
-	background: rgba(235, 239, 246, 0.76);
+	background: rgba(235, 239, 246, 0.25);
 }
 
 .launchpad-content {
@@ -34,8 +32,16 @@ body,
 	padding: clamp(38px, 8vh, 100px) 0 36px;
 }
 
+.launchpad-controls {
+	width: 100%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 12px;
+}
+
 .launchpad-search {
-	width: min(420px, 100%);
+	width: min(420px, calc(100% - 100px));
 	flex: none;
 	padding: 13px 20px;
 	border: 1px solid var(--bloom-border, rgba(255, 255, 255, 0.12));
@@ -51,6 +57,17 @@ body,
 
 .launchpad-search::placeholder { color: var(--bloom-text-muted, rgba(255, 255, 255, 0.6)); }
 .launchpad-search:focus { border-color: var(--bloom-accent, #007aff); }
+
+.launchpad-edit {
+	padding: 11px 14px;
+	border: 1px solid var(--bloom-border, rgba(255, 255, 255, 0.12));
+	border-radius: 12px;
+	background: var(--bloom-bg-expanded, rgba(30, 30, 30, 0.92));
+	color: inherit;
+	font: inherit;
+	cursor: pointer;
+}
+.launchpad-edit:focus-visible { outline: 2px solid var(--bloom-accent, #007aff); }
 
 .launchpad-apps {
 	width: 100%;
@@ -87,8 +104,10 @@ body,
 .launchpad-app:hover,
 .launchpad-app:focus-visible { background: var(--bloom-group-bg, rgba(255, 255, 255, 0.08)); }
 .launchpad-app:focus-visible { outline: 2px solid var(--bloom-accent, #007aff); }
+.launchpad-app.is-hidden { opacity: 0.35; }
 
 .launchpad-icon {
+	position: relative;
 	width: 64px;
 	height: 64px;
 	display: flex;
@@ -102,6 +121,19 @@ body,
 }
 
 .launchpad-icon img { max-width: 76%; max-height: 76%; object-fit: contain; }
+
+.launchpad-badge {
+	position: absolute;
+	top: -7px;
+	right: -7px;
+	width: 22px;
+	height: 22px;
+	border-radius: 50%;
+	background: var(--bloom-accent, #007aff);
+	color: white;
+	font-size: 16px;
+	line-height: 22px;
+}
 
 .launchpad-name {
 	width: 100%;
