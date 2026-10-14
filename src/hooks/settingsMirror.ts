@@ -4,7 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 const LOCAL_ONLY_KEYS = new Set([
 	"bloom-first-run",
 	"bloom-app-version",
-	"bloom-timer-last-duration",
+	"bloom-ics-cache",
 	"bloom-announcement-cache",
 	"bloom-announcement-cache-at",
 	// Legacy name, only read as a fallback for bloom-media-visualizer-enabled.

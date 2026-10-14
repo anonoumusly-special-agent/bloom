@@ -1,5 +1,5 @@
 import { motion, AnimatePresence, useAnimation } from "framer-motion";
-import { useEffect, useState, useCallback, useRef, memo } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo, memo } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -22,6 +22,8 @@ import { CompactMediaPlayer } from "./CompactMediaPlayer";
 import { useWeather } from "./hooks/useWeather";
 import { useSettingsSync } from "./hooks/useSettingsSync";
 import { useTrailingThrottle } from "./hooks/useTrailingThrottle";
+import { parseIcs } from "./ics";
+import type { AgendaEvent } from "./ics";
 import { useAnnouncement } from "./hooks/useAnnouncement";
 import { reloadIfMirrorWasStale } from "./hooks/settingsMirror";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -33,18 +35,24 @@ import {
 	MemoryStick,
 	HardDrive,
 	ArrowUpDown,
-	BellRing,
-	Play,
-	Pause,
-	RotateCcw,
 	Megaphone,
 	X,
 	ChevronLeft,
 	ChevronRight
 } from "lucide-react";
 
-// Pomodoro timer limit.
-const MAX_TIMER_SECONDS = 180 * 60;
+type Todo = { id: string; text: string; done: boolean };
+
+function readTodos(value: unknown): Todo[] {
+	try {
+		const parsed: unknown = JSON.parse(String(value || "[]"));
+		return Array.isArray(parsed) ? parsed.filter((item): item is Todo =>
+			typeof item?.id === "string" && typeof item?.text === "string" && typeof item?.done === "boolean"
+		) : [];
+	} catch {
+		return [];
+	}
+}
 
 type ClaudeNotchEvent = {
 	id: string;
@@ -54,82 +62,6 @@ type ClaudeNotchEvent = {
 	sub: string;
 	project: string;
 	expires: number | null;
-};
-
-// Inline timer editing: digits fill from the right and the colon is inserted
-// automatically ("130" -> 1:30, "2500" -> 25:00, "45" -> 0:45).
-const timerDigitsToSeconds = (digits: string): number | null => {
-	if (!digits) return null;
-	const secs = parseInt(digits.slice(-2) || "0", 10);
-	const mins = parseInt(digits.slice(0, -2) || "0", 10);
-	const total = mins * 60 + secs;
-	return total > 0 && total <= MAX_TIMER_SECONDS ? total : null;
-};
-
-const timerSecondsToDigits = (seconds: number): string => {
-	const mins = Math.floor(seconds / 60);
-	const secs = seconds % 60;
-	return `${mins}${secs.toString().padStart(2, "0")}`.replace(/^0+(?=\d)/, "");
-};
-
-const formatTimerDigits = (digits: string): string => {
-	if (!digits) return "0:00";
-	const secs = digits.slice(-2).padStart(2, "0");
-	const mins = parseInt(digits.slice(0, -2) || "0", 10);
-	return `${mins}:${secs}`;
-};
-
-// Completion chime for the Pomodoro timer. Synthesized with the Web Audio API
-// so no audio asset is needed; created on the Start click so the webview's
-// autoplay policy lets it play when the timer ends.
-let timerChimeCtx: AudioContext | null = null;
-
-const getTimerChimeCtx = (): AudioContext | null => {
-	try {
-		if (!timerChimeCtx) timerChimeCtx = new AudioContext();
-		if (timerChimeCtx.state === "suspended") timerChimeCtx.resume().catch(() => {});
-		return timerChimeCtx;
-	} catch {
-		return null;
-	}
-};
-
-const playTimerChime = () => {
-	const ctx = getTimerChimeCtx();
-	if (!ctx) return;
-	const start = ctx.currentTime + 0.02;
-	const master = ctx.createGain();
-	master.gain.value = 0.45;
-	master.connect(ctx.destination);
-
-	// Soft rising bell arpeggio (A5–C#6–E6) with a quiet octave harmonic.
-	const notes = [
-		{ freq: 880.0, at: 0 },
-		{ freq: 1108.73, at: 0.18 },
-		{ freq: 1318.51, at: 0.36 }
-	];
-	notes.forEach(({ freq, at }) => {
-		const osc = ctx.createOscillator();
-		const harmonic = ctx.createOscillator();
-		const gain = ctx.createGain();
-		const harmonicGain = ctx.createGain();
-		osc.type = "sine";
-		osc.frequency.value = freq;
-		harmonic.type = "sine";
-		harmonic.frequency.value = freq * 2.01;
-		harmonicGain.gain.value = 0.12;
-		gain.gain.setValueAtTime(0.0001, start + at);
-		gain.gain.exponentialRampToValueAtTime(0.32, start + at + 0.02);
-		gain.gain.exponentialRampToValueAtTime(0.0001, start + at + 1.4);
-		osc.connect(gain);
-		harmonic.connect(harmonicGain);
-		harmonicGain.connect(gain);
-		gain.connect(master);
-		osc.start(start + at);
-		harmonic.start(start + at);
-		osc.stop(start + at + 1.5);
-		harmonic.stop(start + at + 1.5);
-	});
 };
 
 // Simple SVG icons
@@ -326,34 +258,6 @@ const calendarMonthRows = (() => {
 	const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
 	return Math.ceil((firstWeekday + daysInMonth) / 7);
 })();
-
-// Odometer-style digit for the timer clock. When the value changes the old
-// digit rolls up and out while the new one rolls in from below with a slight
-// 3D tilt — no card chrome, just the numerals.
-const RollDigit = memo(function RollDigit({
-	value,
-	compact = false
-}: {
-	value: string;
-	compact?: boolean;
-}) {
-	return (
-		<span className={`roll-digit ${compact ? "compact" : ""}`}>
-			<AnimatePresence initial={false}>
-				<motion.span
-					key={value}
-					className="roll-num"
-					initial={{ y: "72%", rotateX: -50, opacity: 0 }}
-					animate={{ y: "0%", rotateX: 0, opacity: 1 }}
-					exit={{ y: "-72%", rotateX: 50, opacity: 0 }}
-					transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-				>
-					{value}
-				</motion.span>
-			</AnimatePresence>
-		</span>
-	);
-});
 
 interface MediaInfo {
 	title: string;
@@ -833,9 +737,12 @@ function App() {
 	const [settingsCalendarEnabled, setSettingsCalendarEnabled] = useState(
 		() => localStorage.getItem("bloom-calendar-enabled") !== "false"
 	);
-	const [settingsTimerSoundEnabled, setSettingsTimerSoundEnabled] = useState(
-		() => localStorage.getItem("bloom-timer-sound-enabled") !== "false"
-	);
+	const [icsUrl, setIcsUrl] = useState(() => localStorage.getItem("bloom-ics-url") || "");
+	const [icsText, setIcsText] = useState(() => localStorage.getItem("bloom-ics-cache") || "");
+	const [todos, setTodos] = useState<Todo[]>(() => readTodos(localStorage.getItem("bloom-todos")));
+	const [todoDraft, setTodoDraft] = useState("");
+	const todoInputRef = useRef<HTMLInputElement>(null);
+	const [agendaNow, setAgendaNow] = useState(() => new Date());
 	const [settingsMusicModeEnabled, setSettingsMusicModeEnabled] = useState(
 		() => localStorage.getItem("bloom-music-mode-enabled") !== "false"
 	);
@@ -890,7 +797,8 @@ function App() {
 
 				setSettingsWeatherEnabled(getVal("bloom-weather-enabled", "true") !== "false");
 				setSettingsCalendarEnabled(getVal("bloom-calendar-enabled", "true") !== "false");
-				setSettingsTimerSoundEnabled(getVal("bloom-timer-sound-enabled", "true") !== "false");
+				setIcsUrl(getVal("bloom-ics-url", "") || "");
+				setTodos(readTodos(getVal("bloom-todos", "[]")));
 				setSettingsMusicModeEnabled(getVal("bloom-music-mode-enabled", "true") !== "false");
 				setSettingsMusicCompactNotch(getVal("bloom-music-compact-notch", "true") !== "false");
 				setSettingsFpsCompact(getVal("bloom-fps-compact", "true") !== "false");
@@ -1029,7 +937,8 @@ function App() {
 		{
 			"bloom-weather-enabled": setSettingsWeatherEnabled,
 			"bloom-calendar-enabled": setSettingsCalendarEnabled,
-			"bloom-timer-sound-enabled": setSettingsTimerSoundEnabled,
+			"bloom-ics-url": (value) => setIcsUrl(String(value)),
+			"bloom-todos": (value) => setTodos(readTodos(value)),
 			"bloom-music-mode-enabled": setSettingsMusicModeEnabled,
 			"bloom-music-compact-notch": setSettingsMusicCompactNotch,
 			"bloom-fps-compact": setSettingsFpsCompact,
@@ -1206,7 +1115,7 @@ function App() {
 	const lastScrollTime = useRef(0);
 	const handleWheel = (e: React.WheelEvent) => {
 		const target = e.target as HTMLElement;
-		if (target.closest(".calendar-grid") || target.closest(".timer-column")) {
+		if (target.closest(".calendar-grid") || target.closest(".agenda-column")) {
 			return;
 		}
 
@@ -1252,164 +1161,57 @@ function App() {
 		return true;
 	};
 
-	// Timer state
-	const [timerSeconds, setTimerSeconds] = useState(0);
-	const [isTimerRunning, setIsTimerRunning] = useState(false);
-	const [isTimerFinished, setIsTimerFinished] = useState(false);
-	const [isEditingTimer, setIsEditingTimer] = useState(false);
-	const [timerEditDigits, setTimerEditDigits] = useState("");
-	const [lastDurationSeconds, setLastDurationSeconds] = useState(() => {
-		const stored = parseInt(localStorage.getItem("bloom-timer-last-duration") || "", 10);
-		return Number.isFinite(stored) && stored > 0 ? stored : 25 * 60;
-	});
-	const timerInputRef = useRef<HTMLInputElement>(null);
-	const timerEditActiveRef = useRef(false);
-	const timerIntervalRef = useRef<any>(null);
-	const prevTimerFinishedRef = useRef(false);
-
-	const formatTimerTime = (totalSeconds: number) => {
-		const mins = Math.floor(Math.abs(totalSeconds) / 60);
-		const secs = Math.abs(totalSeconds) % 60;
-		return `${mins}:${secs.toString().padStart(2, "0")}`;
-	};
-
-	const startTimer = (seconds: number) => {
-		// Unlock audio here (user gesture) so the completion chime can play later.
-		getTimerChimeCtx();
-		timerEditActiveRef.current = false;
-		setIsEditingTimer(false);
-		setTimerSeconds(seconds);
-		setLastDurationSeconds(seconds);
-		localStorage.setItem("bloom-timer-last-duration", String(seconds));
-		setIsTimerRunning(true);
-		setIsTimerFinished(false);
-	};
-
-	const resetTimer = () => {
-		timerEditActiveRef.current = false;
-		setIsEditingTimer(false);
-		setIsTimerRunning(false);
-		setTimerSeconds(0);
-		setIsTimerFinished(false);
-	};
-
-	// Idle/finished play restarts the last duration; paused play resumes.
-	const handlePrimaryTimerAction = () => {
-		if (isEditingTimer) {
-			commitTimerEdit(true);
-		} else if (isTimerRunning) {
-			setIsTimerRunning(false);
-		} else if (timerSeconds > 0) {
-			getTimerChimeCtx();
-			setIsTimerRunning(true);
-		} else {
-			startTimer(lastDurationSeconds);
-		}
-	};
-
-	// Clicking the big time turns it into a masked editor. Digits fill from the
-	// right, so the colon never has to be typed.
-	const beginTimerEdit = () => {
-		if (isTimerRunning || isEditingTimer) return;
-		if (isTimerFinished) resetTimer();
-		const base = timerSeconds > 0 ? timerSeconds : lastDurationSeconds;
-		setTimerEditDigits(timerSecondsToDigits(base));
-		timerEditActiveRef.current = true;
-		setIsEditingTimer(true);
-	};
-
-	const commitTimerEdit = (start: boolean) => {
-		if (!timerEditActiveRef.current) return;
-		timerEditActiveRef.current = false;
-		setIsEditingTimer(false);
-		const total = timerDigitsToSeconds(timerEditDigits);
-		if (total === null) return;
-		const base = timerSeconds > 0 ? timerSeconds : lastDurationSeconds;
-		// A tap that changes nothing (e.g. paused timer) must not reset the state.
-		if (!start && total === base) return;
-		localStorage.setItem("bloom-timer-last-duration", String(total));
-		setLastDurationSeconds(total);
-		setTimerSeconds(start ? total : 0);
-		setIsTimerRunning(start);
-		setIsTimerFinished(false);
-		if (start) getTimerChimeCtx();
-	};
+	useEffect(() => {
+		const tick = setInterval(() => setAgendaNow(new Date()), 60000);
+		return () => clearInterval(tick);
+	}, []);
 
 	useEffect(() => {
-		if (isEditingTimer) {
-			timerInputRef.current?.focus();
-			timerInputRef.current?.select();
-		}
-	}, [isEditingTimer]);
-
-	const timerEditValid = timerDigitsToSeconds(timerEditDigits) !== null;
-
-	const timerState: "idle" | "running" | "paused" | "finished" = isEditingTimer
-		? "idle"
-		: isTimerFinished
-			? "finished"
-			: isTimerRunning
-				? "running"
-				: timerSeconds > 0
-					? "paused"
-					: "idle";
-	const timerDisplaySeconds =
-		timerSeconds > 0 || isTimerFinished ? timerSeconds : lastDurationSeconds;
-	const primaryTimerLabel = isTimerRunning
-		? "Pause"
-		: timerSeconds > 0
-			? "Resume"
-			: isTimerFinished
-				? "Restart"
-				: "Start";
-	const timerEndTime =
-		timerSeconds > 0 && !isTimerFinished
-			? new Date(Date.now() + timerSeconds * 1000).toLocaleTimeString([], {
-					hour: "2-digit",
-					minute: "2-digit",
-					hour12: !timeFormat24h
-				})
-			: null;
-
-	// Split the display time into individual flip-clock digits. Keys are counted
-	// from the right so existing digits keep their identity when minutes grow
-	// from two digits to three. While editing, the same clock renders the digits
-	// being typed so the layout never changes.
-	const clockText = isEditingTimer
-		? formatTimerDigits(timerEditDigits)
-		: formatTimerTime(timerDisplaySeconds);
-	const [clockMinutesText, clockSecondsText] = clockText.split(":");
-	const clockMinutesPadded = clockMinutesText.padStart(2, "0");
-	const clockCompact = clockMinutesPadded.length > 2;
-	const minuteDigitItems = clockMinutesPadded
-		.split("")
-		.map((digit, i, arr) => ({ digit, key: `m${arr.length - i}` }));
-	const secondDigitItems = clockSecondsText
-		.split("")
-		.map((digit, i, arr) => ({ digit, key: `s${arr.length - i}` }));
-
-	useEffect(() => {
-		if (isTimerRunning && timerSeconds > 0) {
-			timerIntervalRef.current = setInterval(() => {
-				setTimerSeconds((s) => s - 1);
-			}, 1000);
-		} else if (isTimerRunning && timerSeconds === 0) {
-			setIsTimerRunning(false);
-			setIsTimerFinished(true);
-		}
-		return () => {
-			if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+		if (!icsUrl.trim()) return;
+		let active = true;
+		const fetchCalendar = () => {
+			invoke<string>("fetch_ics", { url: icsUrl.trim() }).then(text => {
+				if (!active) return;
+				setIcsText(text);
+				try { localStorage.setItem("bloom-ics-cache", text); } catch { /* The live result still works if the storage quota is full. */ }
+			}).catch(() => {}); // Keep the last good calendar while offline.
 		};
-	}, [isTimerRunning, timerSeconds === 0]);
+		// The settings input saves each keystroke; wait for the URL to settle.
+		const initial = setTimeout(fetchCalendar, 500);
+		const refresh = setInterval(fetchCalendar, 15 * 60 * 1000);
+		return () => { active = false; clearTimeout(initial); clearInterval(refresh); };
+	}, [icsUrl]);
 
-	// Completion moment: chime once and reveal the notch in peek mode.
-	useEffect(() => {
-		if (isTimerFinished && !prevTimerFinishedRef.current) {
-			if (settingsTimerSoundEnabled) playTimerChime();
-			if (notchMode === "peek") triggerEventPeek(6000);
-		}
-		prevTimerFinishedRef.current = isTimerFinished;
-	}, [isTimerFinished, settingsTimerSoundEnabled, notchMode, triggerEventPeek]);
+	const agendaStart = new Date(agendaNow.getFullYear(), agendaNow.getMonth(), agendaNow.getDate());
+	const agendaDay = agendaStart.getTime();
+	const agendaEvents = useMemo(() => {
+		if (!icsUrl.trim()) return [];
+		const from = new Date(agendaDay);
+		const to = new Date(from.getFullYear(), from.getMonth(), from.getDate() + 7);
+		return parseIcs(icsText, from, to);
+	}, [icsText, agendaDay, icsUrl]);
+	const agendaGroups = Array.from({ length: 7 }, (_, index) => {
+		const date = new Date(agendaStart.getFullYear(), agendaStart.getMonth(), agendaStart.getDate() + index);
+		return {
+			key: date.getTime(),
+			label: index === 0 ? "Heute" : index === 1 ? "Morgen" : new Intl.DateTimeFormat("de-DE", { weekday: "short", day: "numeric", month: "numeric" }).format(date),
+			events: agendaEvents.filter(event => Math.max(event.start.getTime(), agendaDay) >= date.getTime() && Math.max(event.start.getTime(), agendaDay) < new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1).getTime())
+		};
+	}).filter(group => group.events.length > 0);
+
+	const saveTodos = (next: Todo[]) => {
+		setTodos(next);
+		const value = JSON.stringify(next);
+		localStorage.setItem("bloom-todos", value);
+		invoke("save_setting", { key: "bloom-todos", value }).catch(console.error);
+	};
+	const addTodo = () => {
+		const text = todoDraft.trim();
+		if (!text) return;
+		saveTodos([...todos, { id: crypto.randomUUID(), text, done: false }]);
+		setTodoDraft("");
+		todoInputRef.current?.focus();
+	};
 
 	const lastTrackRef = useRef<string | null>(null);
 	const lastPlayingRef = useRef<boolean>(false);
@@ -1915,10 +1717,6 @@ function App() {
 
 	const toggleCalendarMode = (e: React.MouseEvent) => {
 		e.stopPropagation();
-		if (isTimerFinished) {
-			resetTimer();
-			return;
-		}
 		if (!settingsCalendarEnabled) return;
 
 		setBloomMode((prev) => {
@@ -2014,7 +1812,7 @@ function App() {
 	const getDynamicWidth = () => {
 		if (bloomMode === "claude" && claudeEvent) return 380;
 		if (bloomMode === "announcement" && announcement && !announcementDismissed) return 380;
-		if (isCalendarMode) return 480;
+		if (isCalendarMode) return 560;
 		if (bloomMode === "command-center" && isHovered) return 350;
 		if (isGamingView && !isMusicMode) return 350;
 		if (bloomMode === "status" && isHovered) {
@@ -2047,7 +1845,7 @@ function App() {
 		if (bloomMode === "announcement" && announcement && !announcementDismissed) {
 			return announcement.url ? 168 : 148;
 		}
-		// Sized to the calendar's week-row count plus the timer's fixed content.
+		// Sized to the calendar's week-row count; agenda columns scroll internally.
 		if (bloomMode === "calendar") return calendarMonthRows >= 6 ? 305 : 273;
 		if (bloomMode === "command-center") return isHovered ? 230 : 36;
 		if (isGamingView && !isMusicMode && !isHovered && gamingStats.fpsAvg !== null && !isCompactFps) return 70;
@@ -2629,182 +2427,16 @@ function App() {
 																</AnimatePresence>
 																<div className="time-flip-container" onClick={toggleCalendarMode}>
 																	<AnimatePresence initial={false}>
-																		{timerSeconds > 0 || isTimerFinished ? (
-																			<motion.span
-																				key="timer"
-																				className={`time compact-timer ${isTimerFinished ? "timer-finished" : ""}`}
-																				initial={{ rotateX: -90, opacity: 0 }}
-																				animate={{ rotateX: 0, opacity: 1 }}
-																				exit={{ rotateX: 90, opacity: 0 }}
-																				transition={{ type: "spring", stiffness: 600, damping: 30 }}
-																			>
-																				{isTimerFinished && (
-																					<BellRing
-																						size={13}
-																						strokeWidth={2.5}
-																						className="timer-bell"
-																					/>
-																				)}
-																				{formatTimerTime(timerSeconds)}
-																			</motion.span>
-																		) : (
-																			<motion.span
-																				key="clock"
-																				className="time"
-																				initial={{ rotateX: -90, opacity: 0 }}
-																				animate={{ rotateX: 0, opacity: 1 }}
-																				exit={{ rotateX: 90, opacity: 0 }}
-																				transition={{ type: "spring", stiffness: 600, damping: 30 }}
-																			>
-																				{time}
-																			</motion.span>
-																		)}
-																	</AnimatePresence>
-																</div>
-																<AnimatePresence>
-																	{showPanelArrows && (
-																		<motion.button
-																			key="panel-next"
-																			type="button"
-																			className="panel-arrow next"
-																			aria-label="Next panel"
-																			initial={{ opacity: 0, x: -4 }}
-																			animate={{ opacity: 1, x: 0 }}
-																			exit={{ opacity: 0, x: -4 }}
-																			transition={{ duration: 0.15 }}
-																			onClick={(e) => {
-																				e.stopPropagation();
-																				cycleBloomMode(1);
-																			}}
-																		>
-																			<ChevronRight size={12} strokeWidth={2.5} />
-																		</motion.button>
-																	)}
-																</AnimatePresence>
-																{updateAvailable && showUpdateIndicator && (
-																	<div className="update-dot" />
-																)}
-															</div>
-
-															{/* Right: album art (music) or battery (command-center, calendar) */}
-															<div className="side-content right">
-																{isMusicMode && settingsAlbumArtEnabled ? (
-																	<AnimatePresence mode="wait">
-																		<motion.div
-																			key="album-art"
-																			className="album-art-glow-wrapper"
-																			initial={{ opacity: 0, scale: 0.8 }}
-																			animate={{ opacity: 1, scale: 1 }}
-																			exit={{ opacity: 0, y: -20, scale: 0.8, filter: "blur(8px)" }}
-																			transition={{ duration: 0.12 }}
-																		>
-																			{albumArtUrl && settingsCompactGlowEnabled && (
-																				<img
-																					src={albumArtUrl}
-																					alt=""
-																					className="album-art-glow-bg"
-																					draggable={false}
-																				/>
-																			)}
-																			<button
-																				className={`album-art${isHovered ? " album-art-large" : ""}${!isPlaying ? " paused" : ""}`}
-																				onClick={(e) => {
-																					e.stopPropagation();
-																					togglePlayPause();
-																				}}
-																				onDoubleClick={(e) => {
-																					e.stopPropagation();
-																					skipNext();
-																				}}
-																				onContextMenu={(e) => {
-																					e.preventDefault();
-																					e.stopPropagation();
-																					skipPrevious();
-																				}}
-																			>
-																				<div className="album-art-inner">
-																					<AnimatePresence mode="wait" initial={false}>
-																						{albumArtUrl ? (
-																							<motion.img
-																								key={`compact-art-${albumArtKey}`}
-																								src={albumArtUrl}
-																								alt="Art"
-																								draggable={false}
-																								initial={{ rotateY: 90, opacity: 0 }}
-																								animate={{ rotateY: 0, opacity: 1 }}
-																								exit={{ rotateY: -90, opacity: 0 }}
-																								transition={{ duration: 0.25, ease: "easeInOut" }}
-																								style={{
-																									width: "100%",
-																									height: "100%",
-																									objectFit: "cover"
-																								}}
-																							/>
-																						) : (
-																							<motion.div
-																								key="compact-placeholder"
-																								className="album-art-placeholder"
-																								initial={{ rotateY: 90, opacity: 0 }}
-																								animate={{ rotateY: 0, opacity: 1 }}
-																								exit={{ rotateY: -90, opacity: 0 }}
-																								transition={{ duration: 0.25, ease: "easeInOut" }}
-																							>
-																								<MusicNoteIcon className="music-placeholder-svg-small" />
-																							</motion.div>
-																						)}
-																					</AnimatePresence>
-																					<div className="album-art-overlay">
-																						<div className="control-icon-small">
-																							{isPlaying ? <PauseIcon /> : <PlayIcon />}
-																						</div>
-																					</div>
-																				</div>
-																			</button>
-																		</motion.div>
-																	</AnimatePresence>
-																) : isGamingView && !isMusicMode ? (
-																	<motion.div
-																		key="gaming-stats"
-																		className="passive-features-group"
-																		initial={{ opacity: 0 }}
-																		animate={{ opacity: 1 }}
-																		exit={{ opacity: 0 }}
-																		transition={{ duration: 0.2 }}
-																	>
-																		{isCompactFps ? (
-																			<>
-																				{renderGamingFpsStat("1%", gamingStats.fps1Low)}
-																				{renderGamingFpsStat("FT", gamingStats.frametimeMs === null ? "—" : `${gamingStats.frametimeMs.toFixed(1)} ms`)}
-																			</>
-																		) : (
-																			<>
-																				{gamingStats.vramUsedMb !== null && gamingStats.vramTotalMb !== null && (
-																					<div className="passive-feature gaming-stat" title="GPU Memory">
-																						<MemoryStick size={12} strokeWidth={2} />
-																						<span className="label">
-																							VRAM {(gamingStats.vramUsedMb / 1024).toFixed(1)}/
-																							{parseFloat((gamingStats.vramTotalMb / 1024).toFixed(1))} GB
-																						</span>
-																					</div>
-																				)}
-																			</>
-																		)}
-																	</motion.div>
-																) : !isMusicMode && isHovered && statusWidgets.right.length > 0 ? (
-																	<motion.div
-																		key="right-widgets"
-																		className="passive-features-group"
-																		initial={{ opacity: 0 }}
-																		animate={{ opacity: 1 }}
-																		exit={{ opacity: 0 }}
-																		transition={{ duration: 0.2 }}
-																	>
-																		{statusWidgets.right.map(renderStatusWidget)}
-																	</motion.div>
-																) : null}
-															</div>
-														</motion.div>
-													)}
+																		<motion.span
+															key="clock"
+															className="time"
+															initial={{ rotateX: -90, opacity: 0 }}
+															animate={{ rotateX: 0, opacity: 1 }}
+															exit={{ rotateX: 90, opacity: 0 }}
+															transition={{ type: "spring", stiffness: 600, damping: 30 }}
+														>
+															{time}
+														</motion.span>
 												</AnimatePresence>
 											</div>
 											{isGamingView && !isMusicMode && !isHovered && gamingStats.fpsAvg !== null && !isCompactFps && (
@@ -3131,11 +2763,11 @@ function App() {
 									)}
 								</AnimatePresence>
 
-								{/* Calendar & Timer Split View */}
+								{/* Calendar, events, and ToDos */}
 								<AnimatePresence>
 									{settingsCalendarEnabled && isCalendarMode && (
 										<motion.div
-											className="calendar-timer-content split-view"
+											className="calendar-content split-view"
 											onClick={(e) =>
 												e.stopPropagation()
 											} /* Block mode switches when clicking inside */
@@ -3148,93 +2780,35 @@ function App() {
 												<Calendar />
 											</div>
 
-											<div className="timer-column">
-												<div className={`timer-section-new state-${timerState}`}>
-													<div className="timer-main">
-														<div className="timer-status">
-															{isEditingTimer
-																? "Set duration"
-																: isTimerFinished
-																	? "Time's up"
-																	: timerEndTime
-																		? `${timerState === "paused" ? "Paused · " : ""}ends ${timerEndTime}`
-																		: "Click to edit"}
+											<div className="agenda-column events-column">
+												<h3>Termine</h3>
+												<div className="agenda-scroll">
+													{!icsUrl.trim() ? <p className="agenda-hint">Kalender-Link in den Einstellungen eintragen</p> : agendaGroups.length ? agendaGroups.map(group => (
+														<div className="agenda-group" key={group.key}>
+															<div className="agenda-day-label">{group.label}</div>
+															{group.events.map((event: AgendaEvent, index) => (
+																<div className={`agenda-event ${event.end <= agendaNow ? "past" : ""}`} key={`${event.start.getTime()}-${index}`} title={event.location ? `${event.title} · ${event.location}` : event.title}>
+																	<span className="agenda-time">{event.allDay ? "ganztägig" : new Intl.DateTimeFormat("de-DE", { hour: "2-digit", minute: "2-digit" }).format(event.start)}</span>
+																	<span className="agenda-event-title">{event.title}</span>
+																</div>
+															))}
 														</div>
-
-														<div className={`timer-clock-row ${isEditingTimer ? "editing" : ""}`}>
-															<div
-																className={`timer-clock ${isEditingTimer && !timerEditValid ? "invalid" : ""}`}
-																onClick={beginTimerEdit}
-																title={isTimerRunning ? undefined : "Click to set a duration"}
-															>
-																{minuteDigitItems.map(({ digit, key }) => (
-																	<RollDigit key={key} value={digit} compact={clockCompact} />
-																))}
-																<span className="timer-colon">:</span>
-																{secondDigitItems.map(({ digit, key }) => (
-																	<RollDigit key={key} value={digit} compact={clockCompact} />
-																))}
-															</div>
-															<span className="timer-edit-underline" aria-hidden="true" />
-															{isEditingTimer && (
-																<input
-																	ref={timerInputRef}
-																	className="timer-edit-input"
-																	type="text"
-																	inputMode="numeric"
-																	aria-label="Set timer duration"
-																	value={formatTimerDigits(timerEditDigits)}
-																	onChange={(e) =>
-																		setTimerEditDigits(
-																			e.target.value.replace(/\D/g, "").slice(0, 5)
-																		)
-																	}
-																	onKeyDown={(e) => {
-																		if (e.key === "Enter") commitTimerEdit(true);
-																	}}
-																	onBlur={() => commitTimerEdit(false)}
-																	onWheel={(e) => e.stopPropagation()}
-																/>
-															)}
+													)) : <p className="agenda-hint">Keine Termine in den nächsten 7 Tagen</p>}
+												</div>
+											</div>
+											<div className="agenda-column todos-column">
+												<h3>ToDos</h3>
+												<div className="todo-input-row">
+													<input ref={todoInputRef} value={todoDraft} aria-label="ToDo hinzufügen" placeholder="ToDo hinzufügen" onChange={e => setTodoDraft(e.target.value)} onKeyDown={e => { if (e.key === "Enter") addTodo(); }} onPointerDown={e => { e.stopPropagation(); void getCurrentWebviewWindow().setFocus().then(() => todoInputRef.current?.focus()).catch(() => todoInputRef.current?.focus()); }} />
+												</div>
+												<div className="agenda-scroll">
+													{[...todos].sort((a, b) => Number(a.done) - Number(b.done)).map(todo => (
+														<div className={`todo-row ${todo.done ? "done" : ""}`} key={todo.id}>
+															<input type="checkbox" checked={todo.done} aria-label={`${todo.text} erledigt`} onChange={() => saveTodos(todos.map(item => item.id === todo.id ? { ...item, done: !item.done } : item))} />
+															<span title={todo.text}>{todo.text}</span>
+															<button type="button" aria-label={`${todo.text} löschen`} title="Löschen" onClick={() => saveTodos(todos.filter(item => item.id !== todo.id))}>×</button>
 														</div>
-													</div>
-
-													<div className="timer-controls-row">
-														<span className="timer-controls-spacer" aria-hidden="true" />
-														<button
-															onClick={handlePrimaryTimerAction}
-															onMouseDown={(e) => e.preventDefault()}
-															className="timer-btn-play"
-															title={primaryTimerLabel}
-														>
-															{isTimerRunning ? (
-																<Pause size={14} strokeWidth={2} fill="currentColor" />
-															) : (
-																<Play size={14} strokeWidth={2} fill="currentColor" />
-															)}
-															<span>{primaryTimerLabel}</span>
-														</button>
-														<button
-															onClick={resetTimer}
-															className="timer-btn-reset"
-															disabled={timerSeconds === 0 && !isTimerFinished}
-															title="Reset"
-														>
-															<RotateCcw size={14} strokeWidth={2.5} />
-														</button>
-													</div>
-
-													<div className="timer-preset-group">
-														{[5, 15, 25, 50].map((mins) => (
-															<button
-																key={mins}
-																onClick={() => startTimer(mins * 60)}
-																className={`timer-preset-segment ${lastDurationSeconds === mins * 60 && !isTimerFinished ? "active" : ""}`}
-															>
-																{mins}m
-															</button>
-														))}
-													</div>
+													))}
 												</div>
 											</div>
 										</motion.div>

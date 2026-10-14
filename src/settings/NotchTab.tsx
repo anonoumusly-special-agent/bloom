@@ -1,7 +1,6 @@
 import {
 	PanelTop,
 	Calendar,
-	BellRing,
 	Music,
 	Minimize2,
 	LayoutList,
@@ -27,8 +26,8 @@ interface NotchTabProps {
 	handleNotchEdgeDelayChange: (val: number) => void;
 	calendarEnabled: boolean;
 	toggleCalendar: () => void;
-	timerSoundEnabled: boolean;
-	toggleTimerSound: () => void;
+	icsUrl: string;
+	setIcsUrlValue: (url: string) => void;
 	musicModeEnabled: boolean;
 	toggleMusicMode: () => void;
 	musicCompactNotch: boolean;
@@ -70,8 +69,8 @@ export function NotchTab({
 	handleNotchEdgeDelayChange,
 	calendarEnabled,
 	toggleCalendar,
-	timerSoundEnabled,
-	toggleTimerSound,
+	icsUrl,
+	setIcsUrlValue,
 	musicModeEnabled,
 	toggleMusicMode,
 	musicCompactNotch,
@@ -156,7 +155,7 @@ export function NotchTab({
 					</SettingRow>
 				)}
 
-				<SettingRow icon={Calendar} label="Calendar & Timer" desc="Enable productivity split-view">
+				<SettingRow icon={Calendar} label="Kalender & ToDos" desc="Kalender, Termine und Aufgaben im Notch anzeigen">
 					<label className="toggle-switch">
 						<input type="checkbox" checked={calendarEnabled} onChange={toggleCalendar} />
 						<span className="slider"></span>
@@ -165,14 +164,11 @@ export function NotchTab({
 
 				{calendarEnabled && (
 					<SettingRow
-						icon={BellRing}
-						label="Timer Sound"
-						desc="Play a chime when the timer finishes"
+						icon={Calendar}
+						label="Kalender-Link (ICS)"
+						desc="Outlook: Kalender veröffentlichen → ICS-Link; Google: Geheime Adresse im iCal-Format"
 					>
-						<label className="toggle-switch">
-							<input type="checkbox" checked={timerSoundEnabled} onChange={toggleTimerSound} />
-							<span className="slider"></span>
-						</label>
+						<input type="url" name="bloom-ics-url" className="gaming-path-input" aria-label="Kalender-Link (ICS)" value={icsUrl} onChange={event => setIcsUrlValue(event.target.value)} placeholder="https://…/calendar.ics" />
 					</SettingRow>
 				)}
 

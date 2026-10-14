@@ -22,5 +22,5 @@ assert.match(read("src-tauri/src/main.rs"), /hide_launchpad,/);
 assert.equal(JSON.parse(read("package.json")).version, config.version);
 assert.ok(read("src-tauri/Cargo.toml").includes(`version = "${config.version}"`));
 assert.ok(read("src-tauri/Cargo.lock").includes(`name = "bloom"\nversion = "${config.version}"`));
-assert.equal(config.version, "3.11.0");
+assert.equal(config.version, "3.11.1");
 console.log("Launchpad window wiring and version OK");

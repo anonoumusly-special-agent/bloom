@@ -167,8 +167,8 @@ function SettingsApp() {
 							handleNotchEdgeDelayChange={settings.handleNotchEdgeDelayChange}
 							calendarEnabled={settings.calendarEnabled}
 							toggleCalendar={settings.toggleCalendar}
-							timerSoundEnabled={settings.timerSoundEnabled}
-							toggleTimerSound={settings.toggleTimerSound}
+							icsUrl={settings.icsUrl}
+							setIcsUrlValue={settings.setIcsUrlValue}
 							musicModeEnabled={settings.musicModeEnabled}
 							toggleMusicMode={settings.toggleMusicMode}
 							musicCompactNotch={settings.musicCompactNotch}

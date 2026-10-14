@@ -40,6 +40,44 @@ pub fn log_click(line: String) {
 }
 
 #[tauri::command]
+pub async fn fetch_ics(url: String) -> Result<String, String> {
+    let url = if let Some(rest) = url.strip_prefix("webcal://") {
+        format!("https://{rest}")
+    } else if url.starts_with("https://") {
+        url
+    } else {
+        return Err("Only HTTPS calendar links are supported".into());
+    };
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if attempt.url().scheme() == "https" && attempt.previous().len() < 10 {
+                attempt.follow()
+            } else {
+                attempt.stop()
+            }
+        }))
+        .build()
+        .map_err(|_| "Could not create calendar client")?;
+    let mut response = client.get(&url).send().await.map_err(|_| "Could not fetch calendar")?;
+    if !response.status().is_success() {
+        return Err("Calendar server returned an error".into());
+    }
+    const MAX_BYTES: usize = 5 * 1024 * 1024;
+    if response.content_length().is_some_and(|length| length > MAX_BYTES as u64) {
+        return Err("Calendar is too large".into());
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|_| "Could not read calendar")? {
+        if chunk.len() > MAX_BYTES - body.len() {
+            return Err("Calendar is too large".into());
+        }
+        body.extend_from_slice(&chunk);
+    }
+    String::from_utf8(body).map_err(|_| "Calendar is not UTF-8".into())
+}
+
+#[tauri::command]
 pub async fn set_menu_open(open: bool, rect: Option<IntRect>) {
     MENU_IS_OPEN.store(open, Ordering::Relaxed);
     if let Ok(mut r) = MENU_RECT.lock() {

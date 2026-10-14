@@ -157,6 +157,7 @@ fn main() {
             set_volume_mixer_rect,
             clear_volume_mixer_rect,
             save_setting,
+            fetch_ics,
             claude_notch::notch_claude_decision,
             load_settings,
             settings_file_readable,

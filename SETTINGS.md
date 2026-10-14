@@ -68,7 +68,9 @@ If the Claude spool server is disconnected, Bloom shows Claude desktop Windows n
 
 | Key                         | Type                 | Default  | Description                                                           |
 | --------------------------- | -------------------- | -------- | --------------------------------------------------------------------- |
-| `bloom-calendar-enabled`    | `"true"` / `"false"` | `"true"` | Enable calendar/timer mode in the notch.                              |
+| `bloom-calendar-enabled`    | `"true"` / `"false"` | `"true"` | Enable calendar, events, and ToDos in the notch.                      |
+| `bloom-ics-url`             | HTTPS or webcal URL    | `""`     | ICS subscription link for upcoming events.                            |
+| `bloom-todos`               | JSON string array     | `"[]"`   | Local ToDos as `{id, text, done}` objects.                            |
 | `bloom-music-mode-enabled`  | `"true"` / `"false"` | `"true"` | Enable interactive music media widget.                                |
 | `bloom-music-compact-notch` | `"true"` / `"false"` | `"true"` | Show compact music display (visualizer + artwork) in collapsed notch. |
 
