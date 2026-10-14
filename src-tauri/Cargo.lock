@@ -416,13 +416,14 @@ dependencies = [
 
 [[package]]
 name = "bloom"
-version = "3.11.2"
+version = "3.11.3"
 dependencies = [
  "base64 0.22.1",
  "image",
  "nvml-wrapper",
  "reqwest",
  "rustfft",
+ "rustls",
  "serde",
  "serde_json",
  "tauri",

@@ -48,6 +48,8 @@ pub async fn fetch_ics(url: String) -> Result<String, String> {
     } else {
         return Err("Only HTTPS calendar links are supported".into());
     };
+    // Ignore the error when a crypto provider is already installed.
+    let _ = rustls::crypto::ring::default_provider().install_default();
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .redirect(reqwest::redirect::Policy::custom(|attempt| {
