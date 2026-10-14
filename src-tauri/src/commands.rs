@@ -527,9 +527,62 @@ fn toggle_start_menu() {
 }
 
 #[tauri::command]
+pub fn toggle_launchpad(app: AppHandle) {
+    let Some(win) = app.get_webview_window("launchpad") else {
+        return;
+    };
+    if win.is_visible().unwrap_or(false) {
+        let _ = win.hide();
+        let _ = app.emit("launchpad-visibility", false);
+        return;
+    }
+
+    // Use the cursor's monitor; the dock monitor is the fallback when the cursor is unavailable.
+    let monitor = win
+        .cursor_position()
+        .ok()
+        .and_then(|cursor| win.monitor_from_point(cursor.x, cursor.y).ok().flatten())
+    .or_else(|| {
+        app.get_webview_window("dock")
+            .and_then(|dock| dock.current_monitor().ok().flatten())
+    })
+    .or_else(|| win.primary_monitor().ok().flatten());
+    let place = || {
+        if let Some(monitor) = &monitor {
+            let pos = monitor.position();
+            let size = monitor.size();
+            let _ = win.set_position(tauri::PhysicalPosition::new(pos.x, pos.y));
+            let _ = win.set_size(tauri::PhysicalSize::new(size.width, size.height));
+        }
+    };
+    place();
+    if win.show().is_ok() {
+        place(); // Windows may ignore the first position change while the window is hidden.
+        let _ = win.set_focus();
+        if win.is_visible().unwrap_or(false) {
+            let _ = app.emit("launchpad-visibility", true);
+        }
+    }
+}
+
+#[tauri::command]
+pub fn hide_launchpad(app: AppHandle) {
+    if let Some(win) = app.get_webview_window("launchpad") {
+        if win.is_visible().unwrap_or(false) {
+            let _ = win.hide();
+            let _ = app.emit("launchpad-visibility", false);
+        }
+    }
+}
+
+#[tauri::command]
 pub async fn open_app(app: AppHandle, app_name: String) {
     if app_name == "start" {
-        toggle_start_menu();
+        if get_setting_str(&app, "bloom-start-action").as_deref() == Some("windows") {
+            toggle_start_menu();
+        } else {
+            toggle_launchpad(app);
+        }
         return;
     }
 
@@ -2025,18 +2078,21 @@ pub async fn get_custom_icons(app: AppHandle) -> Result<HashMap<String, String>,
 }
 
 #[tauri::command]
-pub async fn get_installed_apps() -> Vec<AppInfo> {
+pub async fn get_installed_apps(refresh: Option<bool>) -> Vec<AppInfo> {
     let cache = INSTALLED_APPS_CACHE.get_or_init(|| std::sync::Mutex::new(Vec::new()));
     let is_empty = if let Ok(lock) = cache.lock() {
         lock.is_empty()
     } else {
         true
     };
-    if is_empty && !IS_SCANNING.load(Ordering::Relaxed) {
+    if (is_empty || refresh == Some(true)) && !IS_SCANNING.load(Ordering::Relaxed) {
         crate::services::trigger_app_scan();
     }
     let start = std::time::Instant::now();
-    while IS_SCANNING.load(Ordering::Relaxed) && start.elapsed() < std::time::Duration::from_secs(5)
+    // ponytail: A slow shell scan can still exceed 30s; emit a scan-complete event if that occurs in practice.
+    let timeout = if refresh == Some(true) { 30 } else { 5 };
+    while IS_SCANNING.load(Ordering::Relaxed)
+        && start.elapsed() < std::time::Duration::from_secs(timeout)
     {
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }

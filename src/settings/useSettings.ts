@@ -96,6 +96,9 @@ export function useSettings() {
 	const [startIcon, setStartIcon] = useState(
 		() => localStorage.getItem("bloom-start-icon") || "default"
 	);
+	const [startAction, setStartAction] = useState(
+		() => localStorage.getItem("bloom-start-action") === "windows" ? "windows" : "launchpad"
+	);
 	const [dockAdaptive, setDockAdaptive] = useState(
 		() => localStorage.getItem("bloom-dock-adaptive") === "true"
 	);
@@ -200,6 +203,7 @@ export function useSettings() {
 			apply(getVal("bloom-dock-icon-only"), setDockIconOnly, readBool);
 			apply(getVal("bloom-dock-separator-enabled"), setDockSeparatorEnabled, readBool);
 			apply(getVal("bloom-start-icon"), setStartIcon, (v) => v);
+			apply(getVal("bloom-start-action"), setStartAction, (v) => v === "windows" ? "windows" : "launchpad");
 			apply(getVal("bloom-dock-adaptive"), setDockAdaptive, readBool);
 			apply(getVal("bloom-dock-win-number-enabled"), setDockWinNumberEnabled, readBool);
 
@@ -267,6 +271,7 @@ export function useSettings() {
 		"bloom-dock-icon-only": setDockIconOnly,
 		"bloom-dock-separator-enabled": setDockSeparatorEnabled,
 		"bloom-start-icon": setStartIcon,
+		"bloom-start-action": (value) => setStartAction(value === "windows" ? "windows" : "launchpad"),
 		"bloom-dock-preview-enabled": setDockPreviewEnabled,
 		"bloom-dock-adaptive": setDockAdaptive,
 		"bloom-dock-win-number-enabled": setDockWinNumberEnabled,
@@ -580,6 +585,11 @@ export function useSettings() {
 	const handleStartIconChange = (icon: string) => {
 		setStartIcon(icon);
 		saveSetting("bloom-start-icon", icon);
+	};
+
+	const setStartActionValue = (action: string) => {
+		setStartAction(action);
+		saveSetting("bloom-start-action", action);
 	};
 
 	const toggleDockAdaptive = () => {
@@ -896,6 +906,8 @@ export function useSettings() {
 		toggleDockSeparator,
 		startIcon,
 		handleStartIconChange,
+		startAction,
+		setStartActionValue,
 		dockAdaptive,
 		toggleDockAdaptive,
 		dockWinNumberEnabled,

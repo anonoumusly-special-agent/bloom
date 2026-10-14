@@ -119,6 +119,8 @@ fn main() {
             change_notch_mode,
             sync_appbar,
             open_app,
+            toggle_launchpad,
+            hide_launchpad,
             log_click,
             launch_new_instance,
             update_dock_rect,
@@ -301,6 +303,18 @@ fn main() {
                         api.prevent_close();
                         restore_taskbar_and_exit(&overlay_handle);
                     }
+                });
+            }
+
+            if let Some(launchpad_win) = app.get_webview_window("launchpad") {
+                let launchpad_handle = app.handle().clone();
+                launchpad_win.on_window_event(move |event| match event {
+                    tauri::WindowEvent::Focused(false) => hide_launchpad(launchpad_handle.clone()),
+                    tauri::WindowEvent::CloseRequested { api, .. } => {
+                        api.prevent_close();
+                        hide_launchpad(launchpad_handle.clone());
+                    }
+                    _ => {}
                 });
             }
 

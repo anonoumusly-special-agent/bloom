@@ -1,0 +1,126 @@
+html,
+body,
+#root {
+	width: 100%;
+	height: 100%;
+	margin: 0;
+	background: transparent;
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+.launchpad-backdrop {
+	position: fixed;
+	inset: 0;
+	display: flex;
+	justify-content: center;
+	background: rgba(8, 12, 20, 0.7);
+	backdrop-filter: blur(36px) saturate(1.2);
+	-webkit-backdrop-filter: blur(36px) saturate(1.2);
+	color: var(--bloom-text, white);
+}
+
+.light-mode .launchpad-backdrop {
+	background: rgba(235, 239, 246, 0.76);
+}
+
+.launchpad-content {
+	width: min(1060px, calc(100vw - 80px));
+	height: 100%;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	padding: clamp(38px, 8vh, 100px) 0 36px;
+}
+
+.launchpad-search {
+	width: min(420px, 100%);
+	flex: none;
+	padding: 13px 20px;
+	border: 1px solid var(--bloom-border, rgba(255, 255, 255, 0.12));
+	border-radius: 15px;
+	background: var(--bloom-bg-expanded, rgba(30, 30, 30, 0.92));
+	box-shadow: 0 12px 36px rgba(0, 0, 0, 0.14);
+	color: inherit;
+	font: inherit;
+	font-size: 17px;
+	outline: none;
+	user-select: text;
+}
+
+.launchpad-search::placeholder { color: var(--bloom-text-muted, rgba(255, 255, 255, 0.6)); }
+.launchpad-search:focus { border-color: var(--bloom-accent, #007aff); }
+
+.launchpad-apps {
+	width: 100%;
+	min-height: 0;
+	margin-top: 38px;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	scrollbar-color: var(--bloom-scrollbar-thumb, rgba(255, 255, 255, 0.2)) transparent;
+}
+
+.launchpad-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+	gap: 22px 18px;
+	align-content: start;
+	padding: 10px 16px 30px;
+}
+
+.launchpad-app {
+	min-width: 0;
+	padding: 8px 3px;
+	border: 0;
+	border-radius: 15px;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	cursor: pointer;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 10px;
+}
+
+.launchpad-app:hover,
+.launchpad-app:focus-visible { background: var(--bloom-group-bg, rgba(255, 255, 255, 0.08)); }
+.launchpad-app:focus-visible { outline: 2px solid var(--bloom-accent, #007aff); }
+
+.launchpad-icon {
+	width: 64px;
+	height: 64px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 15px;
+	background: var(--bloom-bg-expanded, rgba(30, 30, 30, 0.92));
+	box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
+	font-size: 26px;
+	font-weight: 600;
+}
+
+.launchpad-icon img { max-width: 76%; max-height: 76%; object-fit: contain; }
+
+.launchpad-name {
+	width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	text-align: center;
+	font-size: 13px;
+	text-shadow: 0 1px 5px rgba(0, 0, 0, 0.25);
+}
+
+.launchpad-empty {
+	margin-top: 14vh;
+	text-align: center;
+	color: var(--bloom-text-muted, rgba(255, 255, 255, 0.6));
+}
+
+@media (max-width: 600px) {
+	.launchpad-content { width: calc(100vw - 32px); }
+	.launchpad-grid { grid-template-columns: repeat(auto-fill, minmax(86px, 1fr)); gap: 12px; }
+	.launchpad-icon { width: 54px; height: 54px; }
+}

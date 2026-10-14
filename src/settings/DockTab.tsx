@@ -55,6 +55,8 @@ interface DockTabProps {
 	toggleDockWinNumber: () => void;
 	startIcon: string;
 	handleStartIconChange: (icon: string) => void;
+	startAction: string;
+	setStartActionValue: (action: string) => void;
 }
 
 export function DockTab({
@@ -75,7 +77,9 @@ export function DockTab({
 	dockWinNumberEnabled,
 	toggleDockWinNumber,
 	startIcon,
-	handleStartIconChange
+	handleStartIconChange,
+	startAction,
+	setStartActionValue
 }: DockTabProps) {
 	const handleStartIconUpload = (e: ChangeEvent<HTMLInputElement>) => {
 		const file = e.target.files?.[0];
@@ -112,6 +116,17 @@ export function DockTab({
 
 				{dockEnabled && (
 					<>
+						<SettingRow icon={Grid2X2} label="Start-Aktion" desc="Aktion des Start-Knopfs im Dock">
+							<select
+								className="settings-select"
+								value={startAction}
+								onChange={(event) => setStartActionValue(event.target.value)}
+							>
+								<option value="launchpad">Launchpad</option>
+								<option value="windows">Windows-Startmenü</option>
+							</select>
+						</SettingRow>
+
 						<SettingRow
 							icon={dockMode === "fixed" ? EyeOff : Eye}
 							label="Behavior"

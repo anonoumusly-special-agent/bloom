@@ -214,6 +214,8 @@ function SettingsApp() {
 							toggleDockWinNumber={settings.toggleDockWinNumber}
 							startIcon={settings.startIcon}
 							handleStartIconChange={settings.handleStartIconChange}
+							startAction={settings.startAction}
+							setStartActionValue={settings.setStartActionValue}
 						/>
 					)}
 					{activeTab === "gaming" && (

@@ -145,6 +145,10 @@ const Dock = memo(function Dock() {
 	const [startIcon, setStartIcon] = useState(
 		() => localStorage.getItem("bloom-start-icon") || "default"
 	);
+	const [startAction, setStartAction] = useState(
+		() => localStorage.getItem("bloom-start-action") || "launchpad"
+	);
+	const [launchpadVisible, setLaunchpadVisible] = useState(false);
 	const [isMaximized, setIsMaximized] = useState(false);
 	const [previewData, setPreviewData] = useState<{
 		id: string;
@@ -357,6 +361,7 @@ const Dock = memo(function Dock() {
 
 			const startIconVal = getVal("bloom-start-icon", "default") || "default";
 			setStartIcon(startIconVal);
+			setStartAction(getVal("bloom-start-action", "launchpad") || "launchpad");
 
 			const scaleVal = getVal("bloom-scale");
 			if (scaleVal !== null) setScale(parseFloat(scaleVal));
@@ -392,12 +397,16 @@ const Dock = memo(function Dock() {
 		const unlistenMaximized = listen<boolean>("dock-maximized", (event) => {
 			setIsMaximized(event.payload);
 		});
+		const unlistenLaunchpad = listen<boolean>("launchpad-visibility", (event) => {
+			setLaunchpadVisible(event.payload);
+		});
 
 		return () => {
 			unlistenOverlap.then((f) => f());
 			unlistenEdgeHover.then((f) => f());
 			unlistenVisibility.then((f) => f());
 			unlistenMaximized.then((f) => f());
+			unlistenLaunchpad.then((f) => f());
 		};
 	}, []);
 
@@ -408,6 +417,7 @@ const Dock = memo(function Dock() {
 		"bloom-dock-separator-enabled": setDockSeparatorEnabled,
 		"bloom-dock-adaptive": setDockAdaptive,
 		"bloom-start-icon": setStartIcon,
+		"bloom-start-action": setStartAction,
 		"bloom-scale": setScale
 	});
 
@@ -1089,6 +1099,7 @@ const Dock = memo(function Dock() {
 												draggable={false}
 											/>
 										</motion.div>
+										{startAction !== "windows" && launchpadVisible && <WindowDots count={1} />}
 									</motion.div>
 								)}
 
