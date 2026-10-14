@@ -1812,7 +1812,7 @@ function App() {
 	const getDynamicWidth = () => {
 		if (bloomMode === "claude" && claudeEvent) return 380;
 		if (bloomMode === "announcement" && announcement && !announcementDismissed) return 380;
-		if (isCalendarMode) return 560;
+		if (isCalendarMode) return 480;
 		if (bloomMode === "command-center" && isHovered) return 350;
 		if (isGamingView && !isMusicMode) return 350;
 		if (bloomMode === "status" && isHovered) {
@@ -1845,7 +1845,7 @@ function App() {
 		if (bloomMode === "announcement" && announcement && !announcementDismissed) {
 			return announcement.url ? 168 : 148;
 		}
-		// Sized to the calendar's week-row count; agenda columns scroll internally.
+		// Sized to the calendar's week-row count.
 		if (bloomMode === "calendar") return calendarMonthRows >= 6 ? 305 : 273;
 		if (bloomMode === "command-center") return isHovered ? 230 : 36;
 		if (isGamingView && !isMusicMode && !isHovered && gamingStats.fpsAvg !== null && !isCompactFps) return 70;
@@ -2427,18 +2427,159 @@ function App() {
 																</AnimatePresence>
 																<div className="time-flip-container" onClick={toggleCalendarMode}>
 																	<AnimatePresence initial={false}>
-																		<motion.span
-															key="clock"
-															className="time"
-															initial={{ rotateX: -90, opacity: 0 }}
-															animate={{ rotateX: 0, opacity: 1 }}
-															exit={{ rotateX: 90, opacity: 0 }}
-															transition={{ type: "spring", stiffness: 600, damping: 30 }}
-														>
-															{time}
-														</motion.span>
-												</AnimatePresence>
-											</div>
+																			<motion.span
+																				key="clock"
+																				className="time"
+																				initial={{ rotateX: -90, opacity: 0 }}
+																				animate={{ rotateX: 0, opacity: 1 }}
+																				exit={{ rotateX: 90, opacity: 0 }}
+																				transition={{ type: "spring", stiffness: 600, damping: 30 }}
+																			>
+																				{time}
+																			</motion.span>
+																	</AnimatePresence>
+																</div>
+																<AnimatePresence>
+																	{showPanelArrows && (
+																		<motion.button
+																			key="panel-next"
+																			type="button"
+																			className="panel-arrow next"
+																			aria-label="Next panel"
+																			initial={{ opacity: 0, x: -4 }}
+																			animate={{ opacity: 1, x: 0 }}
+																			exit={{ opacity: 0, x: -4 }}
+																			transition={{ duration: 0.15 }}
+																			onClick={(e) => {
+																				e.stopPropagation();
+																				cycleBloomMode(1);
+																			}}
+																		>
+																			<ChevronRight size={12} strokeWidth={2.5} />
+																		</motion.button>
+																	)}
+																</AnimatePresence>
+																{updateAvailable && showUpdateIndicator && (
+																	<div className="update-dot" />
+																)}
+															</div>
+
+															{/* Right: album art (music) or battery (command-center, calendar) */}
+															<div className="side-content right">
+																{isMusicMode && settingsAlbumArtEnabled ? (
+																	<AnimatePresence mode="wait">
+																		<motion.div
+																			key="album-art"
+																			className="album-art-glow-wrapper"
+																			initial={{ opacity: 0, scale: 0.8 }}
+																			animate={{ opacity: 1, scale: 1 }}
+																			exit={{ opacity: 0, y: -20, scale: 0.8, filter: "blur(8px)" }}
+																			transition={{ duration: 0.12 }}
+																		>
+																			{albumArtUrl && settingsCompactGlowEnabled && (
+																				<img
+																					src={albumArtUrl}
+																					alt=""
+																					className="album-art-glow-bg"
+																					draggable={false}
+																				/>
+																			)}
+																			<button
+																				className={`album-art${isHovered ? " album-art-large" : ""}${!isPlaying ? " paused" : ""}`}
+																				onClick={(e) => {
+																					e.stopPropagation();
+																					togglePlayPause();
+																				}}
+																				onDoubleClick={(e) => {
+																					e.stopPropagation();
+																					skipNext();
+																				}}
+																				onContextMenu={(e) => {
+																					e.preventDefault();
+																					e.stopPropagation();
+																					skipPrevious();
+																				}}
+																			>
+																				<div className="album-art-inner">
+																					<AnimatePresence mode="wait" initial={false}>
+																						{albumArtUrl ? (
+																							<motion.img
+																								key={`compact-art-${albumArtKey}`}
+																								src={albumArtUrl}
+																								alt="Art"
+																								draggable={false}
+																								initial={{ rotateY: 90, opacity: 0 }}
+																								animate={{ rotateY: 0, opacity: 1 }}
+																								exit={{ rotateY: -90, opacity: 0 }}
+																								transition={{ duration: 0.25, ease: "easeInOut" }}
+																								style={{
+																									width: "100%",
+																									height: "100%",
+																									objectFit: "cover"
+																								}}
+																							/>
+																						) : (
+																							<motion.div
+																								key="compact-placeholder"
+																								className="album-art-placeholder"
+																								initial={{ rotateY: 90, opacity: 0 }}
+																								animate={{ rotateY: 0, opacity: 1 }}
+																								exit={{ rotateY: -90, opacity: 0 }}
+																								transition={{ duration: 0.25, ease: "easeInOut" }}
+																							>
+																								<MusicNoteIcon className="music-placeholder-svg-small" />
+																							</motion.div>
+																						)}
+																					</AnimatePresence>
+																					<div className="album-art-overlay">
+																						<div className="control-icon-small">
+																							{isPlaying ? <PauseIcon /> : <PlayIcon />}
+																						</div>
+																					</div>
+																				</div>
+																			</button>
+																		</motion.div>
+																	</AnimatePresence>
+																) : isGamingView && !isMusicMode ? (
+																	<motion.div
+																		key="gaming-stats"
+																		className="passive-features-group"
+																		initial={{ opacity: 0 }}
+																		animate={{ opacity: 1 }}
+																		exit={{ opacity: 0 }}
+																		transition={{ duration: 0.2 }}
+																	>
+																		{isCompactFps ? (
+																			<>
+																				{renderGamingFpsStat("1%", gamingStats.fps1Low)}
+																				{renderGamingFpsStat("FT", gamingStats.frametimeMs === null ? "—" : `${gamingStats.frametimeMs.toFixed(1)} ms`)}
+																			</>
+																		) : (
+																			<>
+																				{gamingStats.vramUsedMb !== null && gamingStats.vramTotalMb !== null && (
+																					<div className="passive-feature gaming-stat" title="GPU Memory">
+																						<MemoryStick size={12} strokeWidth={2} />
+																						<span className="label">
+																							VRAM {(gamingStats.vramUsedMb / 1024).toFixed(1)}/
+																							{parseFloat((gamingStats.vramTotalMb / 1024).toFixed(1))} GB
+																						</span>
+																					</div>
+																				)}
+																			</>
+																		)}
+																	</motion.div>
+																) : !isMusicMode && isHovered && statusWidgets.right.length > 0 ? (
+																	<motion.div
+																		key="right-widgets"
+																		className="passive-features-group"
+																		initial={{ opacity: 0 }}
+																		animate={{ opacity: 1 }}
+																		exit={{ opacity: 0 }}
+																		transition={{ duration: 0.2 }}
+																	>
+																		{statusWidgets.right.map(renderStatusWidget)}
+																	</motion.div>
+																) : null}
 															</div>
 														</motion.div>
 													)}
