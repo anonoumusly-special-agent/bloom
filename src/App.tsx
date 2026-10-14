@@ -2439,6 +2439,11 @@ function App() {
 														</motion.span>
 												</AnimatePresence>
 											</div>
+															</div>
+														</motion.div>
+													)}
+												</AnimatePresence>
+											</div>
 											{isGamingView && !isMusicMode && !isHovered && gamingStats.fpsAvg !== null && !isCompactFps && (
 												<div className="gaming-fps-row">
 													{renderGamingFpsStat("FPS", gamingStats.fpsLive ?? "—")}
