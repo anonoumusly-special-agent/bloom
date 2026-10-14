@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { LogOut, Moon, Power } from "lucide-react";
 import type { AppInfo } from "./dockApps";
 import { reloadIfMirrorWasStale } from "./hooks/settingsMirror";
 import { useSettingsSync } from "./hooks/useSettingsSync";
@@ -191,7 +192,11 @@ export default function Launchpad() {
 					exit={{ opacity: 0 }}
 					transition={{ duration: 0.16 }}
 					onMouseDown={(event) => {
-						if (event.target === event.currentTarget) hide();
+						if (event.button !== 0) return;
+						const target = event.target as Element;
+						if (target.closest("button, input")) return;
+						if (target.classList.contains("launchpad-apps") && event.nativeEvent.offsetX >= target.clientWidth) return;
+						hide();
 					}}
 				>
 					<motion.section
@@ -241,6 +246,11 @@ export default function Launchpad() {
 							) : (
 								<p className="launchpad-empty">{loading ? "Apps werden geladen…" : "Keine Apps gefunden"}</p>
 							)}
+						</div>
+						<div className="launchpad-power">
+							<button type="button" onClick={() => { hide(); void invoke("power_action", { action: "sleep" }).catch(console.error); }}><Moon size={16} aria-hidden="true" />Energie sparen</button>
+							<button type="button" onClick={() => { hide(); void invoke("power_action", { action: "logoff" }).catch(console.error); }}><LogOut size={16} aria-hidden="true" />Abmelden</button>
+							<button type="button" onClick={() => { hide(); void invoke("power_action", { action: "shutdown" }).catch(console.error); }}><Power size={16} aria-hidden="true" />Herunterfahren</button>
 						</div>
 					</motion.section>
 				</motion.main>

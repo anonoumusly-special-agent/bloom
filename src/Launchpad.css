@@ -71,12 +71,37 @@ body,
 
 .launchpad-apps {
 	width: 100%;
+	flex: 1;
 	min-height: 0;
 	margin-top: 38px;
 	overflow-y: auto;
 	overscroll-behavior: contain;
 	scrollbar-color: var(--bloom-scrollbar-thumb, rgba(255, 255, 255, 0.2)) transparent;
 }
+
+.launchpad-power {
+	display: flex;
+	justify-content: center;
+	gap: 10px;
+	margin-top: 16px;
+}
+
+.launchpad-power button {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	padding: 10px 13px;
+	border: 1px solid var(--bloom-border, rgba(255, 255, 255, 0.12));
+	border-radius: 999px;
+	background: var(--bloom-bg-expanded, rgba(30, 30, 30, 0.92));
+	color: inherit;
+	font: inherit;
+	font-size: 13px;
+	cursor: pointer;
+}
+
+.launchpad-power button:focus-visible { outline: 2px solid var(--bloom-accent, #007aff); }
+.light-mode .launchpad-power button { background: var(--bloom-bg-expanded, rgba(255, 255, 255, 0.92)); }
 
 .launchpad-grid {
 	display: grid;

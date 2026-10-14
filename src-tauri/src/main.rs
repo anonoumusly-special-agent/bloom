@@ -121,6 +121,7 @@ fn main() {
             open_app,
             toggle_launchpad,
             hide_launchpad,
+            power_action,
             log_click,
             launch_new_instance,
             update_dock_rect,

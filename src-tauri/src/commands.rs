@@ -616,6 +616,61 @@ pub fn hide_launchpad(app: AppHandle) {
 }
 
 #[tauri::command]
+pub fn power_action(action: String) -> Result<(), String> {
+    click_log(&format!("power_action action={action}"));
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+
+        match action.as_str() {
+            "sleep" => std::thread::Builder::new()
+                .name("bloom-sleep".into())
+                .spawn(|| {
+                    // Let the Launchpad window hide before Windows suspends the session.
+                    std::thread::sleep(std::time::Duration::from_millis(300));
+                    let suspended = unsafe {
+                        windows::Win32::System::Power::SetSuspendState(false, false, false)
+                    };
+                    if !suspended {
+                        click_log(&format!(
+                            "power_action sleep failed: {}",
+                            std::io::Error::last_os_error()
+                        ));
+                    }
+                })
+                .map(|_| ())
+                .map_err(|error| error.to_string()),
+            "logoff" | "shutdown" => {
+                let args: &[&str] = if action == "shutdown" {
+                    &["/s", "/hybrid", "/t", "0"]
+                } else {
+                    &["/l"]
+                };
+                std::process::Command::new("shutdown.exe")
+                    .args(args)
+                    .creation_flags(0x08000000)
+                    .spawn()
+                    .map(|_| ())
+                    .map_err(|error| error.to_string())
+            }
+            _ => Err(format!("Unknown power action: {action}")),
+        }
+    }
+
+    #[cfg(not(windows))]
+    {
+        Err("Power actions require Windows".into())
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn power_action_rejects_unknown_action() {
+    assert!(power_action("restart".into()).is_err());
+}
+
+#[tauri::command]
 pub async fn open_app(app: AppHandle, app_name: String) {
     if app_name == "start" {
         if get_setting_str(&app, "bloom-start-action").as_deref() == Some("windows") {

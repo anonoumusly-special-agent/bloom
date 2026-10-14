@@ -1,6 +1,6 @@
 [package]
 name = "bloom"
-version = "3.11.6"
+version = "3.11.7"
 description = ""
 authors = ["sehaz"]
 edition = "2021"
@@ -58,6 +58,7 @@ windows = { version = "0.61", features = [
 	"Win32_Devices_FunctionDiscovery",
 	"Devices_Radios",
 	"System_Power",
+	"Win32_System_Power",
 	"Win32_NetworkManagement_IpHelper",
 	"Win32_NetworkManagement_Ndis",
 	"Win32_NetworkManagement_WiFi",
