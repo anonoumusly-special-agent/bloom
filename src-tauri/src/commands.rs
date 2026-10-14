@@ -1199,7 +1199,7 @@ fn extract_arg(args: &str, key: &str) -> Option<String> {
     }
 }
 
-/// True for shell application ids (`PackageFamily!App`, `Company.Product`, ...)
+/// True for shell application ids and AppsFolder known-folder parsing names
 /// that are not real file system paths.
 pub fn is_aumid_path(path: &str) -> bool {
     let p = path.trim().trim_matches('"');
@@ -1207,6 +1207,21 @@ pub fn is_aumid_path(path: &str) -> bool {
         return false;
     }
     if p.to_lowercase().starts_with("shell:appsfolder\\") {
+        return true;
+    }
+    let bytes = p.as_bytes();
+    if bytes.len() >= 39
+        && bytes[0] == b'{'
+        && bytes[37] == b'}'
+        && bytes[38] == b'\\'
+        && bytes[1..37].iter().enumerate().all(|(i, b)| {
+            if matches!(i, 8 | 13 | 18 | 23) {
+                *b == b'-'
+            } else {
+                b.is_ascii_hexdigit()
+            }
+        })
+    {
         return true;
     }
     if p.contains('\\') || p.contains('/') || p.contains(':') {
@@ -3941,6 +3956,11 @@ mod pwa_icon_tests {
         assert!(is_aumid_path(
             "shell:AppsFolder\\4DF9E0F8.Netflix_mcm4njqhnhss8!Netflix.App"
         ));
+        assert!(is_aumid_path(
+            "{7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E}\\Steam\\steam.exe"
+        ));
+        assert!(!is_aumid_path("{not-a-guid}\\x.exe"));
+        assert!(!is_aumid_path("C:\\Program Files\\x.exe"));
         assert!(!is_aumid_path("C:\\Windows\\explorer.exe"));
         assert!(!is_aumid_path("msedge.exe"));
         assert!(!is_aumid_path(""));
