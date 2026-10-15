@@ -4,7 +4,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Effect } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { X, Settings, Palette, PanelTop, Monitor, Gamepad2, Layers, Info, Megaphone } from "lucide-react";
+import { X, Settings, Palette, PanelTop, Monitor, Gamepad2, Layers, Mic, Info, Megaphone } from "lucide-react";
 import {
 	useSettings,
 	GeneralTab,
@@ -13,6 +13,7 @@ import {
 	DockTab,
 	GamingTab,
 	OverlaysTab,
+	DictationTab,
 	AboutTab
 } from "./settings/index";
 import type { SettingsTab } from "./settings/index";
@@ -29,6 +30,7 @@ const TABS: { id: SettingsTab; label: string; icon: typeof Settings }[] = [
 	{ id: "dock", label: "Dock", icon: Monitor },
 	{ id: "gaming", label: "Gaming", icon: Gamepad2 },
 	{ id: "overlays", label: "Overlays", icon: Layers },
+	{ id: "dictation", label: "Dictation", icon: Mic },
 	{ id: "about", label: "About", icon: Info }
 ];
 
@@ -240,6 +242,21 @@ function SettingsApp() {
 							toggleBrightnessOverlay={settings.toggleBrightnessOverlay}
 							brightnessEdgeEnabled={settings.brightnessEdgeEnabled}
 							toggleBrightnessEdge={settings.toggleBrightnessEdge}
+						/>
+					)}
+					{activeTab === "dictation" && (
+						<DictationTab
+							enabled={settings.dictationEnabled}
+							busy={settings.dictationBusy}
+							onToggle={settings.toggleDictation}
+							hotkey={settings.dictationKey}
+							onHotkeyChange={settings.setDictationKeyValue}
+							language={settings.dictationLanguage}
+							onLanguageChange={settings.setDictationLanguageValue}
+							words={settings.dictationWords}
+							onWordsChange={settings.setDictationWordsValue}
+							replacements={settings.dictationReplacements}
+							onReplacementsChange={settings.setDictationReplacementsValue}
 						/>
 					)}
 					{activeTab === "about" && (

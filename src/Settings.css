@@ -640,6 +640,46 @@ input:checked + .slider:before {
 	color: var(--bloom-text, white);
 }
 
+.dictation-hint {
+	margin: 10px 6px;
+	line-height: 1.5;
+}
+
+.dictation-field {
+	padding: 0 14px 10px 54px;
+}
+
+.dictation-textarea {
+	width: 100%;
+	min-height: 64px;
+	box-sizing: border-box;
+	resize: vertical;
+	background: transparent;
+	border: 1px solid var(--bloom-border, rgba(255, 255, 255, 0.15));
+	border-radius: 6px;
+	padding: 6px;
+	color: var(--bloom-text, #fff);
+	font: inherit;
+	font-size: 12px;
+}
+
+.dictation-history-item {
+	padding: 10px 14px;
+	border-bottom: 1px solid var(--bloom-border, rgba(255, 255, 255, 0.06));
+}
+
+.dictation-history-text {
+	margin: 4px 0;
+	font-size: 12px;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.dictation-history-actions {
+	display: flex;
+	gap: 6px;
+}
+
 .setting-item.action {
 	cursor: pointer;
 	transition: background 0.2s;

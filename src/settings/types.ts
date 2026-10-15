@@ -7,7 +7,7 @@ export interface WidgetConfig {
 
 export const CLAUDE_NOTCH_DEFAULT_PATH = "S:\\tools\\claude-notch\\spool";
 
-export type SettingsTab = "general" | "appearance" | "notch" | "dock" | "gaming" | "overlays" | "about";
+export type SettingsTab = "general" | "appearance" | "notch" | "dock" | "gaming" | "overlays" | "dictation" | "about";
 
 export interface SettingRowProps {
 	icon: ComponentType<SVGProps<SVGSVGElement> & { size?: number; strokeWidth?: number }>;

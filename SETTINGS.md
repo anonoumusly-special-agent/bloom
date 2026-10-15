@@ -47,6 +47,16 @@ Edit `settings.json` with any text editor while Bloom is running. Changes are ap
 | `bloom-presentmon-path`  | file path string       | `""`      | Path to PresentMon.exe for FPS metrics in Gaming Mode.                                    |
 | `bloom-fps-compact`      | `"true"` / `"false"`   | `"true"`  | Show FPS, average, 1% low, and frame time in one row instead of GPU temperature and VRAM. |
 
+### Dictation
+
+| Key                              | Type                           | Default   | Description |
+| -------------------------------- | ------------------------------ | --------- | ----------- |
+| `bloom-dictation-enabled`       | `"true"` / `"false"`         | `"false"` | Enable the dictation hotkey and local speech engine. The model downloads on first activation. |
+| `bloom-dictation-key`           | virtual-key decimal string     | `"124"`   | Windows virtual-key code for the dictation toggle; 124 is F13. |
+| `bloom-dictation-language`      | `"de"` / `"en"` / `"auto"` | `"de"`    | Recognition language; `auto` detects the language. |
+| `bloom-dictation-words`         | newline-separated string       | `""`      | Priority vocabulary. Nonempty trimmed lines are joined with `, ` and the prompt stops before exceeding 600 characters. |
+| `bloom-dictation-replacements`  | newline-separated string       | `""`      | Whole-word, case-insensitive replacements, one `wrong => right` pair per line. |
+
 ### Notch
 
 | Key                      | Type                             | Default   | Description                                                                                                                    |

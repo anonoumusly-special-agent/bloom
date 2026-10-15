@@ -75,6 +75,22 @@ export function useSettings() {
 	const [gamingEnabled, setGamingEnabled] = useState(
 		() => localStorage.getItem("bloom-gaming-enabled") === "true"
 	);
+	const [dictationEnabled, setDictationEnabled] = useState(
+		() => localStorage.getItem("bloom-dictation-enabled") === "true"
+	);
+	const [dictationBusy, setDictationBusy] = useState(false);
+	const [dictationKey, setDictationKey] = useState(
+		() => localStorage.getItem("bloom-dictation-key") || "124"
+	);
+	const [dictationLanguage, setDictationLanguage] = useState(
+		() => localStorage.getItem("bloom-dictation-language") || "de"
+	);
+	const [dictationWords, setDictationWords] = useState(
+		() => localStorage.getItem("bloom-dictation-words") || ""
+	);
+	const [dictationReplacements, setDictationReplacements] = useState(
+		() => localStorage.getItem("bloom-dictation-replacements") || ""
+	);
 	const [fpsCompact, setFpsCompact] = useState(
 		() => localStorage.getItem("bloom-fps-compact") !== "false"
 	);
@@ -194,6 +210,11 @@ export function useSettings() {
 			apply(getVal("bloom-dock-enabled"), setDockEnabled, readBool);
 			apply(getVal("bloom-tray-corner-enabled"), setTrayButtonEnabled, readBool);
 			apply(getVal("bloom-gaming-enabled"), setGamingEnabled, readBool);
+			apply(getVal("bloom-dictation-enabled"), setDictationEnabled, readBool);
+			apply(getVal("bloom-dictation-key"), setDictationKey, String);
+			apply(getVal("bloom-dictation-language"), setDictationLanguage, String);
+			apply(getVal("bloom-dictation-words"), setDictationWords, String);
+			apply(getVal("bloom-dictation-replacements"), setDictationReplacements, String);
 			apply(getVal("bloom-fps-compact"), setFpsCompact, readBool);
 			setGamingProcesses(readGamingProcesses(getVal("bloom-gaming-processes")));
 			apply(getVal("bloom-presentmon-path"), setPresentMonPath, (v) => v);
@@ -263,6 +284,11 @@ export function useSettings() {
 		"bloom-dock-enabled": setDockEnabled,
 		"bloom-tray-corner-enabled": setTrayButtonEnabled,
 		"bloom-gaming-enabled": setGamingEnabled,
+		"bloom-dictation-enabled": setDictationEnabled,
+		"bloom-dictation-key": (value) => setDictationKey(String(value)),
+		"bloom-dictation-language": (value) => setDictationLanguage(String(value)),
+		"bloom-dictation-words": (value) => setDictationWords(String(value)),
+		"bloom-dictation-replacements": (value) => setDictationReplacements(String(value)),
 		"bloom-fps-compact": setFpsCompact,
 		"bloom-gaming-processes": (value) => setGamingProcesses(readGamingProcesses(String(value))),
 		"bloom-presentmon-path": (value) => setPresentMonPath(localStorage.getItem("bloom-presentmon-path") ?? String(value)),
@@ -426,6 +452,42 @@ export function useSettings() {
 		const next = !weatherEnabled;
 		setWeatherEnabled(next);
 		saveSetting("bloom-weather-enabled", String(next));
+	};
+
+	const toggleDictation = async () => {
+		if (dictationBusy) return;
+		setDictationBusy(true);
+		const next = !dictationEnabled;
+		try {
+			localStorage.setItem("bloom-dictation-enabled", String(next));
+			try {
+				await invoke("save_setting", { key: "bloom-dictation-enabled", value: String(next) });
+			} catch (error) {
+				localStorage.setItem("bloom-dictation-enabled", String(dictationEnabled));
+				throw error;
+			}
+			setDictationEnabled(next);
+			await invoke(next ? "dictation_prepare" : "dictation_disable");
+		} finally {
+			setDictationBusy(false);
+		}
+	};
+
+	const setDictationKeyValue = (value: string) => {
+		setDictationKey(value);
+		saveSetting("bloom-dictation-key", value);
+	};
+	const setDictationLanguageValue = (value: string) => {
+		setDictationLanguage(value);
+		saveSetting("bloom-dictation-language", value);
+	};
+	const setDictationWordsValue = (value: string) => {
+		setDictationWords(value);
+		saveSetting("bloom-dictation-words", value);
+	};
+	const setDictationReplacementsValue = (value: string) => {
+		setDictationReplacements(value);
+		saveSetting("bloom-dictation-replacements", value);
 	};
 
 	const toggleCalendar = () => {
@@ -879,6 +941,19 @@ export function useSettings() {
 		// Widgets
 		statusWidgets,
 		handleWidgetsChange,
+
+		// Dictation
+		dictationEnabled,
+		dictationBusy,
+		toggleDictation,
+		dictationKey,
+		setDictationKeyValue,
+		dictationLanguage,
+		setDictationLanguageValue,
+		dictationWords,
+		setDictationWordsValue,
+		dictationReplacements,
+		setDictationReplacementsValue,
 
 		// Dock
 		gamingEnabled,

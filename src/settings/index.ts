@@ -6,5 +6,6 @@ export { NotchTab } from "./NotchTab";
 export { DockTab } from "./DockTab";
 export { GamingTab } from "./GamingTab";
 export { OverlaysTab } from "./OverlaysTab";
+export { DictationTab } from "./DictationTab";
 export { AboutTab } from "./AboutTab";
 export type { WidgetConfig, SettingsTab, SettingRowProps } from "./types";
