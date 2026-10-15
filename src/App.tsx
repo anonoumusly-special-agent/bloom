@@ -70,7 +70,7 @@ const sounds: Partial<Record<"start" | "fertig", HTMLAudioElement>> = {};
 
 function playSound(name: "start" | "fertig") {
 	const audio = (sounds[name] ??= new Audio(`/sounds/${name}.mp3`));
-	audio.volume = 1;
+	audio.volume = 0.5;
 	audio.currentTime = 0;
 	audio.play().catch(console.error);
 }

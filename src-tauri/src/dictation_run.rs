@@ -40,8 +40,13 @@ fn emit_error(app: &AppHandle, message: impl std::fmt::Display) {
 pub fn init(app: AppHandle) {
     let _ = APP.set(app.clone());
     dictation_engine::kill_stale_server();
+    prewarm(app);
+}
+
+pub fn prewarm(app: AppHandle) {
     if crate::utils::get_setting_str(&app, "bloom-dictation-enabled").as_deref() == Some("true")
         && dictation_engine::is_installed()
+        && !crate::gaming::is_gaming_active()
     {
         tauri::async_runtime::spawn(async move {
             let lang = crate::utils::get_setting_str(&app, "bloom-dictation-language")
@@ -126,6 +131,10 @@ pub fn toggle() {
         }
         return;
     }
+    if crate::gaming::is_gaming_active() {
+        emit_error(app, "Diktat ist im Game Mode aus");
+        return;
+    }
     if crate::utils::get_setting_str(app, "bloom-dictation-enabled").as_deref() != Some("true") {
         return;
     }
@@ -161,6 +170,10 @@ pub fn shutdown() {
         session.recording.store(false, Ordering::Release);
     }
     dictation_engine::stop_server();
+}
+
+pub fn pause_for_game() {
+    shutdown();
 }
 
 async fn run(app: AppHandle, session: Arc<Session>, capture: std::thread::JoinHandle<Result<(), String>>) {

@@ -38,6 +38,7 @@ pub fn setup_gaming_mode(app: AppHandle) {
                     run_task("BloomGameModeOff");
                     active_game = None;
                     publish_state(&app, None);
+                    crate::dictation_run::prewarm(app.clone());
                 }
             } else if !configured.is_empty() || active_game.is_some() {
                 match running_processes() {
@@ -50,6 +51,7 @@ pub fn setup_gaming_mode(app: AppHandle) {
                             run_task("BloomGameModeOff");
                             active_game = None;
                             publish_state(&app, None);
+                            crate::dictation_run::prewarm(app.clone());
                         } else if active_game.is_none() {
                             if let Some((game, pid)) = configured
                                 .iter()
@@ -57,6 +59,7 @@ pub fn setup_gaming_mode(app: AppHandle) {
                             {
                                 active_game = Some(game.to_string());
                                 run_task("BloomGameModeOn");
+                                crate::dictation_run::pause_for_game();
                                 publish_state(&app, active_game.clone());
                                 crate::fps::start(&app, pid);
                             }
