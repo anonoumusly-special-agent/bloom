@@ -252,16 +252,22 @@ pub fn start_server(lang: &str) -> Result<u16, String> {
         let _ = old.wait();
     }
     let _ = fs::remove_file(dir.join("server.pid"));
+    let log_path = dir.join("server.log");
+    let log = File::create(&log_path)
+        .map_err(|e| format!("Cannot create {}: {e}", log_path.display()))?;
+    let stderr_log = log
+        .try_clone()
+        .map_err(|e| format!("Cannot clone {}: {e}", log_path.display()))?;
     let mut child = Command::new(&exe)
         .arg("-m")
         .arg(&model)
         .args(["--host", "127.0.0.1", "--port"])
         .arg(port.to_string())
-        .args(["-l", lang, "-fa", "-sns", "-nc"])
+        .args(["-l", lang, "-fa", "-sns", "-mc", "0"])
         .current_dir(exe.parent().ok_or("Whisper engine directory is missing")?)
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stdout(Stdio::from(log))
+        .stderr(Stdio::from(stderr_log))
         .creation_flags(CREATE_NO_WINDOW)
         .spawn()
         .map_err(|e| format!("Cannot start whisper server: {e}"))?;
@@ -320,6 +326,17 @@ pub fn kill_stale_server() {
     let _ = fs::remove_file(pid_file);
 }
 
+fn server_log_tail(log: &str) -> String {
+    let lines: Vec<_> = log.lines().collect();
+    let errors: Vec<_> = lines
+        .iter()
+        .copied()
+        .filter(|line| line.to_ascii_lowercase().contains("error"))
+        .collect();
+    let selected = if errors.is_empty() { &lines } else { &errors };
+    selected[selected.len().saturating_sub(3)..].join("\n")
+}
+
 pub async fn wait_ready(port: u16) -> Result<(), String> {
     let client = reqwest::Client::builder()
         .no_proxy()
@@ -343,7 +360,15 @@ pub async fn wait_ready(port: u16) -> Result<(), String> {
                     .map_err(|e| format!("Cannot check whisper server: {e}"))?
                     .is_some()
             {
-                return Err("Whisper server exited; check NVIDIA driver and VC++ runtime".into());
+                let mut message =
+                    "Whisper server exited; check NVIDIA driver and VC++ runtime".to_string();
+                if let Ok(log) = fs::read(whisper_dir().join("server.log")) {
+                    let tail = server_log_tail(&String::from_utf8_lossy(&log));
+                    if !tail.is_empty() {
+                        message.push_str(&format!("\n{tail}"));
+                    }
+                }
+                return Err(message);
             }
         }
         if Instant::now() >= deadline {
@@ -399,7 +424,7 @@ pub async fn transcribe(port: u16, wav: Vec<u8>, lang: &str, prompt: &str) -> Re
 
 #[cfg(test)]
 mod tests {
-    use super::server_exe;
+    use super::{server_exe, server_log_tail};
     use std::fs;
 
     #[test]
@@ -410,5 +435,14 @@ mod tests {
         fs::write(nested.join("whisper-server.exe"), []).unwrap();
         assert_eq!(server_exe(&dir), Some(nested.join("whisper-server.exe")));
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn server_log_tail_prefers_recent_errors() {
+        assert_eq!(
+            server_log_tail("old error\nstart\nError one\n\nnote\nerror two\nerror three\nend\n"),
+            "Error one\nerror two\nerror three"
+        );
+        assert_eq!(server_log_tail("one\ntwo\nthree\nfour\n"), "two\nthree\nfour");
     }
 }
