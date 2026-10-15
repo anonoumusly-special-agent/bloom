@@ -7,6 +7,8 @@ mod claude_toasts;
 mod dictation;
 #[allow(dead_code)]
 mod dictation_engine;
+#[allow(dead_code)]
+mod dictation_run;
 mod fps;
 mod fps_stats;
 mod gaming;
@@ -197,6 +199,7 @@ fn main() {
             // invoke save_setting as soon as it loads, which happens before the
             // rest of this hook runs.
             crate::utils::init_settings_cache(app.handle());
+            dictation_run::init(app.handle().clone());
             claude_notch::start(app.handle().clone());
             // Crash-recovery: if a previous session was force-killed while the native
             // taskbar was hidden, restore it now. Runs before the frontend re-hides it
@@ -447,6 +450,7 @@ fn main() {
         .expect("error while building tauri application");
     app.run(|_, event| {
         if let tauri::RunEvent::Exit = event {
+            dictation_run::shutdown();
             fps::stop();
             set_taskbar_visibility(true, true);
             NATIVE_TASKBAR_HIDDEN.store(false, Ordering::Relaxed);

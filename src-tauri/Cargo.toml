@@ -46,6 +46,8 @@ windows = { version = "0.61", features = [
 	"Win32_System_Wmi",
 	"Win32_Storage_FileSystem",
 	"Win32_System_Ole",
+	"Win32_System_DataExchange",
+	"Win32_System_Memory",
 	"Storage_Streams",
 	"Win32_System_Console",
 	"Graphics_Imaging",
