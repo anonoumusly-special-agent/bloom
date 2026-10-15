@@ -1,7 +1,7 @@
 {
 	"$schema": "https://schema.tauri.app/config/2",
 	"productName": "bloom",
-	"version": "3.12.2",
+	"version": "3.12.3",
 	"identifier": "com.sehaz.bloom",
 	"build": {
 		"beforeDevCommand": "bun run dev",
@@ -30,7 +30,8 @@
 				"skipTaskbar": true,
 				"shadow": false,
 				"visible": false,
-				"dragDropEnabled": false
+				"dragDropEnabled": false,
+				"additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required"
 			},
 			{
 				"label": "settings",
@@ -50,7 +51,8 @@
 				"skipTaskbar": false,
 				"shadow": true,
 				"visible": false,
-				"center": true
+				"center": true,
+				"additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required"
 			},
 			{
 				"label": "overlay",
@@ -71,7 +73,8 @@
 				"focus": false,
 				"skipTaskbar": true,
 				"shadow": false,
-				"visible": false
+				"visible": false,
+				"additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required"
 			},
 			{
 				"label": "launchpad",
@@ -93,7 +96,8 @@
 				"focus": true,
 				"skipTaskbar": true,
 				"shadow": false,
-				"visible": false
+				"visible": false,
+				"additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required"
 			},
 			{
 				"label": "dock",
@@ -114,7 +118,8 @@
 				"focus": false,
 				"skipTaskbar": true,
 				"shadow": false,
-				"visible": false
+				"visible": false,
+				"additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required"
 			}
 		],
 		"security": {

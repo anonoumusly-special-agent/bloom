@@ -66,6 +66,30 @@ type ClaudeNotchEvent = {
 
 type DictationState = "idle" | "recording" | "paused" | "processing" | "error";
 
+let startClickContext: AudioContext | undefined;
+
+async function playStartClick() {
+	try {
+		const context = (startClickContext ??= new AudioContext());
+		if (context.state === "suspended") await context.resume();
+		const now = context.currentTime;
+		const oscillator = context.createOscillator();
+		const gain = context.createGain();
+		oscillator.type = "sine";
+		oscillator.frequency.setValueAtTime(1100, now);
+		oscillator.frequency.exponentialRampToValueAtTime(1500, now + 0.06);
+		gain.gain.setValueAtTime(0, now);
+		gain.gain.linearRampToValueAtTime(0.18, now + 0.005);
+		gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+		oscillator.connect(gain);
+		gain.connect(context.destination);
+		oscillator.start(now);
+		oscillator.stop(now + 0.1);
+	} catch (error) {
+		console.error(error);
+	}
+}
+
 function DictationNotch({ state, text, message }: { state: DictationState; text: string; message: string }) {
 	const [level, setLevel] = useState(0);
 	useEffect(() => {
@@ -506,7 +530,9 @@ function App() {
 		let showingError = false;
 		let errorTimer: ReturnType<typeof setTimeout> | undefined;
 		const unlistenState = listen<{ state: DictationState; message?: string }>("dictation-state", ({ payload }) => {
+			const wasActive = active;
 			active = payload.state === "recording" || payload.state === "paused" || payload.state === "processing";
+			if (payload.state === "recording" && !wasActive) playStartClick();
 			if (payload.state === "idle" || payload.state === "error") setDictationText("");
 			if (payload.state === "idle" && showingError) return;
 			if (errorTimer) clearTimeout(errorTimer);
