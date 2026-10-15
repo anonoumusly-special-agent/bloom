@@ -26,6 +26,7 @@ use windows::Win32::System::Console::SetConsoleCtrlHandler;
 use windows::Win32::System::Console::{CTRL_BREAK_EVENT, CTRL_CLOSE_EVENT, CTRL_C_EVENT};
 
 use crate::commands::*;
+use crate::dictation_run::*;
 use crate::services::*;
 use crate::state::*;
 use crate::utils::*;
@@ -164,6 +165,12 @@ fn main() {
             set_volume_mixer_rect,
             clear_volume_mixer_rect,
             save_setting,
+            dictation_prepare,
+            dictation_disable,
+            dictation_toggle,
+            dictation_history,
+            dictation_history_audio,
+            dictation_status,
             fetch_ics,
             claude_notch::notch_claude_decision,
             load_settings,

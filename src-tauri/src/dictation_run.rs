@@ -1,10 +1,11 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use serde_json::json;
+use base64::Engine as _;
+use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
@@ -37,8 +38,65 @@ fn emit_error(app: &AppHandle, message: impl std::fmt::Display) {
 }
 
 pub fn init(app: AppHandle) {
-    let _ = APP.set(app);
+    let _ = APP.set(app.clone());
     dictation_engine::kill_stale_server();
+    if crate::utils::get_setting_str(&app, "bloom-dictation-enabled").as_deref() == Some("true")
+        && dictation_engine::is_installed()
+    {
+        tauri::async_runtime::spawn(async move {
+            let lang = crate::utils::get_setting_str(&app, "bloom-dictation-language")
+                .filter(|lang| matches!(lang.as_str(), "de" | "en" | "auto"))
+                .unwrap_or_else(|| "de".into());
+            let result = async {
+                let port = dictation_engine::start_server(&lang)?;
+                dictation_engine::wait_ready(port).await
+            }.await;
+            if let Err(message) = result {
+                emit_error(&app, message);
+            }
+        });
+    }
+}
+
+#[tauri::command]
+pub async fn dictation_prepare(app: AppHandle) -> Result<(), String> {
+    dictation_engine::ensure_installed(&app).await?;
+    let lang = crate::utils::get_setting_str(&app, "bloom-dictation-language")
+        .filter(|lang| matches!(lang.as_str(), "de" | "en" | "auto"))
+        .unwrap_or_else(|| "de".into());
+    let port = dictation_engine::start_server(&lang)?;
+    dictation_engine::wait_ready(port).await
+}
+
+#[tauri::command]
+pub fn dictation_disable() {
+    shutdown();
+}
+
+#[tauri::command]
+pub fn dictation_toggle() {
+    toggle();
+}
+
+#[tauri::command]
+pub fn dictation_history(app: AppHandle) -> Vec<Value> {
+    read_history(&history_dir(&app))
+}
+
+#[tauri::command]
+pub fn dictation_history_audio(app: AppHandle, time: u64) -> Result<String, String> {
+    let wav = history_dir(&app).join(format!("{time}.wav"));
+    let bytes = fs::read(wav).map_err(|e| format!("Cannot read dictation audio: {e}"))?;
+    Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
+}
+
+#[tauri::command]
+pub fn dictation_status() -> Value {
+    json!({
+        "installed": dictation_engine::is_installed(),
+        "server": dictation_engine::server_running(),
+        "recording": is_recording(),
+    })
 }
 
 pub fn is_recording() -> bool {
@@ -430,6 +488,19 @@ pub fn history_dir(app: &AppHandle) -> PathBuf {
     app.path().app_data_dir().unwrap_or_default().join("dictation")
 }
 
+fn read_history(dir: &Path) -> Vec<Value> {
+    let Ok(entries) = fs::read_dir(dir) else { return Vec::new() };
+    let mut records = entries.filter_map(Result::ok).filter_map(|entry| {
+        let path = entry.path();
+        if path.extension().is_none_or(|ext| ext != "json") { return None; }
+        let record: Value = serde_json::from_slice(&fs::read(path).ok()?).ok()?;
+        let time = record.get("time").and_then(Value::as_u64).unwrap_or(0);
+        Some((time, record))
+    }).collect::<Vec<_>>();
+    records.sort_unstable_by(|left, right| right.0.cmp(&left.0));
+    records.into_iter().map(|(_, record)| record).collect()
+}
+
 fn save_history(app: &AppHandle, samples: &[f32], text: &str, lang: &str) -> Result<(), String> {
     app.path().app_data_dir().map_err(|e| format!("Cannot find app data directory: {e}"))?;
     let dir = history_dir(app);
@@ -472,7 +543,8 @@ fn prune_history(dir: &std::path::Path) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::prune_history;
+    use super::{prune_history, read_history};
+    use serde_json::json;
     use std::fs;
 
     #[test]
@@ -488,6 +560,17 @@ mod tests {
         assert!(!dir.join("1.json").exists() && !dir.join("2.wav").exists());
         assert!(dir.join("3.json").exists() && dir.join("52.wav").exists());
         assert!(dir.join("53.json").exists());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn history_reads_newest_first() {
+        let dir = std::env::temp_dir().join(format!("bloom-dictation-read-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("10.json"), json!({"time":10,"text":"new"}).to_string()).unwrap();
+        fs::write(dir.join("2.json"), json!({"time":2,"text":"old"}).to_string()).unwrap();
+        fs::write(dir.join("broken.json"), "{").unwrap();
+        assert_eq!(read_history(&dir), vec![json!({"time":10,"text":"new"}), json!({"time":2,"text":"old"})]);
         fs::remove_dir_all(dir).unwrap();
     }
 }

@@ -60,6 +60,19 @@ fn server_exe(dir: &Path) -> Option<PathBuf> {
     None
 }
 
+pub fn is_installed() -> bool {
+    let dir = whisper_dir();
+    dir.join(MODEL_NAME).is_file() && server_exe(&dir.join("engine")).is_some()
+}
+
+pub fn server_running() -> bool {
+    SERVER
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner())
+        .as_mut()
+        .is_some_and(|(child, _, _)| child.try_wait().is_ok_and(|status| status.is_none()))
+}
+
 async fn download(
     client: &reqwest::Client,
     app: &AppHandle,
@@ -148,7 +161,7 @@ pub async fn ensure_installed(app: &AppHandle) -> Result<(), String> {
             .map_err(|e| format!("Cannot create {}: {e}", dir.display()))?;
         let engine_dir = dir.join("engine");
         let model = dir.join(MODEL_NAME);
-        if model.is_file() && server_exe(&engine_dir).is_some() {
+        if is_installed() {
             return Ok(());
         }
         // Ignore an already installed provider, as in the existing network commands.

@@ -26,6 +26,7 @@ static WIN_KEY_DOWN: AtomicBool = AtomicBool::new(false);
 /// Digit (1-9) of the currently held Win+Number combo, 0 when none. Key
 /// auto-repeat re-fires the keydown; only the first press may toggle an app.
 static WIN_NUMBER_HELD: AtomicU8 = AtomicU8::new(0);
+static DICTATION_KEY_HELD: AtomicBool = AtomicBool::new(false);
 /// Virtual key Microsoft documents as "unassigned", used as the mask key.
 /// See `send_start_menu_mask`.
 const MASK_VK: u16 = 0xE8;
@@ -147,7 +148,7 @@ unsafe extern "system" fn keyboard_hook_proc(
     lparam: windows::Win32::Foundation::LPARAM,
 ) -> windows::Win32::Foundation::LRESULT {
     use windows::Win32::UI::Input::KeyboardAndMouse::{
-        VIRTUAL_KEY, VK_LWIN, VK_RWIN, VK_VOLUME_DOWN, VK_VOLUME_MUTE, VK_VOLUME_UP,
+        VIRTUAL_KEY, VK_LWIN, VK_RWIN, VK_SPACE, VK_VOLUME_DOWN, VK_VOLUME_MUTE, VK_VOLUME_UP,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         KBDLLHOOKSTRUCT, LLKHF_INJECTED, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
@@ -157,6 +158,35 @@ unsafe extern "system" fn keyboard_hook_proc(
         let vk_code = VIRTUAL_KEY(kb.vkCode as u16);
         let is_down = wparam.0 == WM_KEYDOWN as usize || wparam.0 == WM_SYSKEYDOWN as usize;
         let is_up = wparam.0 == WM_KEYUP as usize || wparam.0 == WM_SYSKEYUP as usize;
+
+        // Logi Options injects mapped keys, so handle dictation before the injected-key filter.
+        if let Some(app) = KEYBOARD_HOOK_APP_HANDLE.get() {
+            if crate::utils::get_setting_str(app, "bloom-dictation-enabled").as_deref()
+                == Some("true")
+            {
+                let key = crate::utils::get_setting_str(app, "bloom-dictation-key")
+                    .and_then(|value| value.parse::<u16>().ok())
+                    .unwrap_or(124);
+                if vk_code.0 == key {
+                    if is_down && !DICTATION_KEY_HELD.swap(true, Ordering::AcqRel) {
+                        crate::dictation_run::toggle();
+                    } else if is_up {
+                        DICTATION_KEY_HELD.store(false, Ordering::Release);
+                    }
+                    return windows::Win32::Foundation::LRESULT(1);
+                }
+                if vk_code == VK_SPACE && crate::dictation_run::is_recording() {
+                    if is_down {
+                        crate::dictation_run::set_paused(true);
+                    } else if is_up {
+                        crate::dictation_run::set_paused(false);
+                    }
+                    return windows::Win32::Foundation::LRESULT(1);
+                }
+            } else {
+                DICTATION_KEY_HELD.store(false, Ordering::Release);
+            }
+        }
 
         // Only physical presses drive the Win+Number replacement; injected
         // events (our own Start taps and mask key) must not re-enter it.
