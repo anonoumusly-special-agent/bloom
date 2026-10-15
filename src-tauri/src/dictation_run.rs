@@ -12,7 +12,7 @@ use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
 
 use crate::{dictation, dictation_engine};
 
-const SPEECH_RMS: f32 = 0.01;
+const SPEECH_RMS: f32 = 0.006;
 const SAMPLE_RATE: usize = 16_000;
 const MAX_BLOCK: usize = 25 * SAMPLE_RATE;
 
@@ -199,7 +199,7 @@ async fn run(app: AppHandle, session: Arc<Session>, capture: std::thread::JoinHa
                 lock(&session.pending).drain(..cut);
             } else if dictation::has_speech(&buffer, SPEECH_RMS) {
                 let partial = dictation_engine::transcribe(
-                    port, dictation::encode_wav_16k_mono(&buffer), &session.lang, &session.prompt,
+                    port, dictation::encode_wav_16k_mono(&dictation::pad_for_whisper(&buffer)), &session.lang, &session.prompt,
                 ).await?;
                 let mut text = committed.clone();
                 append_text(&mut text, &partial);
@@ -224,7 +224,7 @@ async fn run(app: AppHandle, session: Arc<Session>, capture: std::thread::JoinHa
         let final_result = async {
             if dictation::has_speech(&rest, SPEECH_RMS) {
                 let text = dictation_engine::transcribe(
-                    port, dictation::encode_wav_16k_mono(&rest), &session.lang, &session.prompt,
+                    port, dictation::encode_wav_16k_mono(&dictation::pad_for_whisper(&rest)), &session.lang, &session.prompt,
                 ).await?;
                 append_text(&mut committed, &text);
             }

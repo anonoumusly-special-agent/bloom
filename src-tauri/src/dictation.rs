@@ -52,6 +52,14 @@ pub fn encode_wav_16k_mono(samples: &[f32]) -> Vec<u8> {
     wav
 }
 
+pub fn pad_for_whisper(samples: &[f32]) -> Vec<f32> {
+    let mut padded = vec![0.0; 4_000];
+    padded.extend_from_slice(samples);
+    padded.extend_from_slice(&[0.0; 4_000]);
+    padded.resize(padded.len().max(24_000), 0.0);
+    padded
+}
+
 pub fn rms(samples: &[f32]) -> f32 {
     if samples.is_empty() {
         return 0.0;
@@ -68,9 +76,9 @@ pub fn has_speech(samples_16k: &[f32], threshold: f32) -> bool {
     samples_16k
         .chunks_exact(320)
         .filter(|window| rms(window) >= threshold)
-        .take(15)
+        .take(8)
         .count()
-        == 15
+        == 8
 }
 
 pub fn last_silence_cut(samples_16k: &[f32], threshold: f32) -> Option<usize> {
@@ -213,14 +221,29 @@ mod tests {
     }
 
     #[test]
-    fn speech_requires_300_ms_of_active_windows() {
+    fn speech_requires_160_ms_of_active_windows() {
         let mut samples = vec![0.0; 320 * 20];
         assert!(!has_speech(&samples, 0.1));
-        for (i, sample) in samples.iter_mut().take(320 * 15).enumerate() {
+        for (i, sample) in samples.iter_mut().take(320 * 8).enumerate() {
             *sample = (i as f32 * std::f32::consts::TAU / 40.0).sin();
         }
         assert!(has_speech(&samples, 0.1));
-        assert!(!has_speech(&samples[..320 * 14], 0.1));
+        assert!(!has_speech(&samples[..320 * 7], 0.1));
+    }
+
+    #[test]
+    fn whisper_padding_keeps_audio_between_silence_and_reaches_minimum_length() {
+        let short = pad_for_whisper(&[0.5, -0.5]);
+        assert_eq!(short.len(), 24_000);
+        assert!(short[..4_000].iter().all(|&sample| sample == 0.0));
+        assert_eq!(&short[4_000..4_002], &[0.5, -0.5]);
+        assert!(short[4_002..].iter().all(|&sample| sample == 0.0));
+
+        let long = pad_for_whisper(&vec![0.5; 20_000]);
+        assert_eq!(long.len(), 28_000);
+        assert!(long[..4_000].iter().all(|&sample| sample == 0.0));
+        assert!(long[4_000..24_000].iter().all(|&sample| sample == 0.5));
+        assert!(long[24_000..].iter().all(|&sample| sample == 0.0));
     }
 
     #[test]
