@@ -64,6 +64,39 @@ type ClaudeNotchEvent = {
 	expires: number | null;
 };
 
+type DictationState = "idle" | "recording" | "paused" | "processing" | "error";
+
+function DictationNotch({ state, text, message }: { state: DictationState; text: string; message: string }) {
+	const [level, setLevel] = useState(0);
+	useEffect(() => {
+		if (state !== "recording") return;
+		let disposed = false;
+		const unlisten = listen<number>("dictation-level", ({ payload }) => {
+			if (!disposed && Number.isFinite(payload)) setLevel(Math.max(0, Math.min(payload, 0.2)));
+		});
+		return () => {
+			disposed = true;
+			unlisten.then((stop) => stop()).catch(console.error);
+		};
+	}, [state]);
+
+	const label = state === "paused" ? "Paused" : state === "processing" ? text || "Processing…" : state === "error" ? message : text || "Listening…";
+	const amplitude = state === "recording" ? Math.min(level / 0.12, 1) : 0;
+	return (
+		<div className={`dictation-notch ${state}`} role={state === "error" ? "alert" : "status"}>
+			<span className="dictation-indicator" aria-hidden="true" />
+			{state !== "error" && (
+				<span className="dictation-wave" aria-hidden="true">
+					{[0.5, 0.8, 1, 0.7, 0.4].map((weight, index) => (
+						<i key={index} style={{ height: `${3 + 12 * amplitude * weight}px` }} />
+					))}
+				</span>
+			)}
+			<span className="dictation-text"><span>{label}</span></span>
+		</div>
+	);
+}
+
 // Simple SVG icons
 function WifiIcon({ enabled, connected }: { enabled: boolean; connected: boolean }) {
 	return (
@@ -463,6 +496,39 @@ function App() {
 	useEffect(() => {
 		setWindowLabel(getCurrentWebviewWindow().label);
 	}, []);
+	const [dictationState, setDictationState] = useState<DictationState>("idle");
+	const [dictationText, setDictationText] = useState("");
+	const [dictationMessage, setDictationMessage] = useState("");
+	const dictationVisible = dictationState !== "idle";
+	useEffect(() => {
+		if (windowLabel !== "main") return;
+		let active = false;
+		let showingError = false;
+		let errorTimer: ReturnType<typeof setTimeout> | undefined;
+		const unlistenState = listen<{ state: DictationState; message?: string }>("dictation-state", ({ payload }) => {
+			active = payload.state === "recording" || payload.state === "paused" || payload.state === "processing";
+			if (payload.state === "idle" || payload.state === "error") setDictationText("");
+			if (payload.state === "idle" && showingError) return;
+			if (errorTimer) clearTimeout(errorTimer);
+			showingError = payload.state === "error";
+			setDictationState(payload.state);
+			if (showingError) {
+				setDictationMessage(payload.message || "Dictation failed");
+				errorTimer = setTimeout(() => {
+					showingError = false;
+					setDictationState("idle");
+				}, 2000);
+			}
+		});
+		const unlistenPartial = listen<{ text: string }>("dictation-partial", ({ payload }) => {
+			if (active) setDictationText(payload.text);
+		});
+		return () => {
+			if (errorTimer) clearTimeout(errorTimer);
+			unlistenState.then((stop) => stop()).catch(console.error);
+			unlistenPartial.then((stop) => stop()).catch(console.error);
+		};
+	}, [windowLabel]);
 	useEffect(() => {
 		if (windowLabel !== "main") return;
 
@@ -582,6 +648,7 @@ function App() {
 		!startupAnimating &&
 		!gamingActive &&
 		claudeEvents.length === 0 &&
+		!dictationVisible &&
 		((notchMode === "smart" && isOverlapped && interactionState === "none") ||
 			(notchMode === "peek" && interactionState === "none" && !eventPeek));
 
@@ -1810,6 +1877,7 @@ function App() {
 
 	// Calculate width dynamically based on enabled features
 	const getDynamicWidth = () => {
+		if (dictationVisible) return 380;
 		if (bloomMode === "claude" && claudeEvent) return 380;
 		if (bloomMode === "announcement" && announcement && !announcementDismissed) return 380;
 		if (isCalendarMode) return 480;
@@ -1840,6 +1908,7 @@ function App() {
 		if (!isExpanded || !isVisible || isHidden) {
 			return isImpacted ? 28.9 : 44.2;
 		}
+		if (dictationVisible) return 36;
 		if (bloomMode === "claude" && claudeEvent) return 116;
 		// Announcement card: body is line-clamped, so a fixed size fits both cases.
 		if (bloomMode === "announcement" && announcement && !announcementDismissed) {
@@ -2002,7 +2071,9 @@ function App() {
 							)}
 					</AnimatePresence>
 					<AnimatePresence mode="wait">
-						{isExpanded && (
+						{isExpanded && (dictationVisible ? (
+							<DictationNotch state={dictationState} text={dictationText} message={dictationMessage} />
+						) : (
 							<motion.div
 								key="bloom-content"
 								initial={{ opacity: 0 }}
@@ -2961,7 +3032,7 @@ function App() {
 									)}
 								</AnimatePresence>
 							</motion.div>
-						)}
+						))}
 					</AnimatePresence>
 				</motion.div>
 			</div>
