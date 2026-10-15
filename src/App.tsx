@@ -72,7 +72,7 @@ function DictationNotch({ state, text, message }: { state: DictationState; text:
 		if (state !== "recording") return;
 		let disposed = false;
 		const unlisten = listen<number>("dictation-level", ({ payload }) => {
-			if (!disposed && Number.isFinite(payload)) setLevel(Math.max(0, Math.min(payload, 0.2)));
+			if (!disposed && Number.isFinite(payload)) setLevel((prev) => prev * 0.6 + Math.max(0, Math.min(payload, 0.2)) * 0.4);
 		});
 		return () => {
 			disposed = true;
@@ -87,8 +87,8 @@ function DictationNotch({ state, text, message }: { state: DictationState; text:
 			<span className="dictation-indicator" aria-hidden="true" />
 			{state !== "error" && (
 				<span className="dictation-wave" aria-hidden="true">
-					{[0.5, 0.8, 1, 0.7, 0.4].map((weight, index) => (
-						<i key={index} style={{ height: `${3 + 12 * amplitude * weight}px` }} />
+					{[0.35, 0.55, 0.75, 0.9, 1, 0.9, 0.75, 0.55, 0.35].map((weight, index) => (
+						<i key={index} style={{ "--a": amplitude * weight, animationDelay: `${index * -0.11}s` } as React.CSSProperties} />
 					))}
 				</span>
 			)}
