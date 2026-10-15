@@ -5,6 +5,8 @@ mod claude_notch;
 mod claude_toasts;
 #[allow(dead_code)]
 mod dictation;
+#[allow(dead_code)]
+mod dictation_engine;
 mod fps;
 mod fps_stats;
 mod gaming;
