@@ -968,7 +968,7 @@ function OverlayApp() {
 						style={{
 							position: "absolute",
 							display: "flex",
-							filter: "drop-shadow(0 0 12px rgba(217,119,87,0.7))"
+							filter: "drop-shadow(0 0 5px rgba(217,119,87,0.35))"
 						}}
 						transformTemplate={(_, transform) =>
 							`translate(-50%, -50%)${transform === "none" ? "" : ` ${transform}`}`
