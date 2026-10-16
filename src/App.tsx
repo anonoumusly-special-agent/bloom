@@ -19,6 +19,7 @@ import {
 	TrayIcon
 } from "./icons";
 import { CompactMediaPlayer } from "./CompactMediaPlayer";
+import { ClaudeSprite } from "./ClaudeSprite";
 import { useWeather } from "./hooks/useWeather";
 import { useSettingsSync } from "./hooks/useSettingsSync";
 import { useTrailingThrottle } from "./hooks/useTrailingThrottle";
@@ -3101,8 +3102,9 @@ function App() {
 											animate={{ opacity: 1 }}
 											exit={{ opacity: 0, filter: "blur(4px)", transition: { duration: 0.1 } }}
 										>
-											<div className={`claude-dot-grid ${claudeEvent.type}`} aria-hidden="true">
-												{Array.from({ length: 16 }, (_, index) => <i key={index} />)}
+											<div className="claude-sprite" aria-hidden="true">
+												<ClaudeSprite variant={claudeEvent.type} size={56} />
+												<span className={`claude-status-dot ${claudeEvent.type}`} />
 											</div>
 											<div className="claude-copy">
 												<span className="announcement-title">{claudeEvent.title}</span>

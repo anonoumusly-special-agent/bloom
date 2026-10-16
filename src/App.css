@@ -1546,23 +1546,23 @@ img {
 	gap: 12px;
 }
 
-.claude-dot-grid {
+.claude-sprite {
 	flex-shrink: 0;
-	display: grid;
-	grid-template-columns: repeat(4, 3px);
-	gap: 3px;
-	color: #30d158;
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	pointer-events: none;
 }
 
-.claude-dot-grid.ask {
-	color: #ff9f0a;
-}
-
-.claude-dot-grid i {
-	width: 3px;
-	height: 3px;
+.claude-status-dot {
+	width: 6px;
+	height: 6px;
 	border-radius: 50%;
-	background: currentColor;
+	background: #30d158;
+}
+
+.claude-status-dot.ask {
+	background: #ff9f0a;
 }
 
 .claude-copy {
