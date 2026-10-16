@@ -1,11 +1,11 @@
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::net::TcpListener;
 use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::json;
 use tauri::{AppHandle, Emitter};
@@ -26,6 +26,8 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 static INSTALL_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 static SERVER: Mutex<Option<(Child, u16, String)>> = Mutex::new(None);
+// ponytail: Serialize these short writes; use a logger thread if log volume makes this a bottleneck.
+static LOG_LOCK: Mutex<()> = Mutex::new(());
 
 fn whisper_dir() -> PathBuf {
     std::env::var_os("LOCALAPPDATA")
@@ -33,6 +35,41 @@ fn whisper_dir() -> PathBuf {
         .unwrap_or_default()
         .join("bloom")
         .join("whisper")
+}
+
+pub fn dlog(msg: &str) {
+    let _guard = LOG_LOCK.lock().unwrap_or_else(|poison| poison.into_inner());
+    let dir = whisper_dir();
+    if fs::create_dir_all(&dir).is_err() { return; }
+    let path = dir.join("dictation.log");
+    if fs::metadata(&path).is_ok_and(|meta| meta.len() > 2 * 1024 * 1024) {
+        let previous = dir.join("dictation.prev.log");
+        let _ = fs::remove_file(&previous);
+        let _ = fs::rename(&path, previous);
+    }
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
+        let time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+        let _ = writeln!(file, "{}.{:03} {}", time.as_secs(), time.subsec_millis(), msg.replace(['\r', '\n'], "\\n"));
+    }
+}
+
+fn error_chain(error: &dyn std::error::Error) -> String {
+    let mut message = error.to_string();
+    let mut source = error.source();
+    while let Some(cause) = source {
+        message.push_str(": ");
+        message.push_str(&cause.to_string());
+        source = cause.source();
+    }
+    message
+}
+
+fn request_error(kind: &str, context: &str, error: reqwest::Error) -> String {
+    dlog(&format!(
+        "transcribe kind={kind} {context}: {error:?} timeout={} connect={} request={} body={}",
+        error.is_timeout(), error.is_connect(), error.is_request(), error.is_body()
+    ));
+    format!("{context}: {}", error_chain(&error))
 }
 
 fn server_exe(dir: &Path) -> Option<PathBuf> {
@@ -71,6 +108,18 @@ pub fn server_running() -> bool {
         .unwrap_or_else(|poison| poison.into_inner())
         .as_mut()
         .is_some_and(|(child, _, _)| child.try_wait().is_ok_and(|status| status.is_none()))
+}
+
+pub fn server_status() -> String {
+    let mut server = SERVER.lock().unwrap_or_else(|poison| poison.into_inner());
+    match server.as_mut() {
+        Some((child, port, _)) => match child.try_wait() {
+            Ok(None) => format!("running pid={} port={port}", child.id()),
+            Ok(Some(status)) => format!("exited pid={} port={port} status={status}", child.id()),
+            Err(error) => format!("check failed pid={} port={port}: {error}", child.id()),
+        },
+        None => "no stored child".into(),
+    }
 }
 
 async fn download(
@@ -225,13 +274,17 @@ pub fn start_server(lang: &str) -> Result<u16, String> {
     }
     let mut server = SERVER.lock().unwrap_or_else(|poison| poison.into_inner());
     if let Some((child, port, current_lang)) = server.as_mut() {
-        if child
-            .try_wait()
-            .map_err(|e| format!("Cannot check whisper server: {e}"))?
-            .is_none()
-            && current_lang == lang
-        {
-            return Ok(*port);
+        match child.try_wait() {
+            Ok(None) if current_lang == lang => {
+                dlog(&format!("start_server reused port={port} pid={}", child.id()));
+                return Ok(*port);
+            }
+            Ok(Some(status)) => dlog(&format!("start_server old child pid={} exited status={status}", child.id())),
+            Ok(None) => {}
+            Err(error) => {
+                dlog(&format!("start_server old child pid={} try_wait failed: {error}", child.id()));
+                return Err(format!("Cannot check whisper server: {error}"));
+            }
         }
     }
     let dir = whisper_dir();
@@ -253,6 +306,12 @@ pub fn start_server(lang: &str) -> Result<u16, String> {
     }
     let _ = fs::remove_file(dir.join("server.pid"));
     let log_path = dir.join("server.log");
+    if log_path.exists() {
+        let previous = dir.join("server.prev.log");
+        let _ = fs::remove_file(&previous);
+        fs::rename(&log_path, previous)
+            .map_err(|e| format!("Cannot preserve {}: {e}", log_path.display()))?;
+    }
     let log = File::create(&log_path)
         .map_err(|e| format!("Cannot create {}: {e}", log_path.display()))?;
     let stderr_log = log
@@ -276,15 +335,19 @@ pub fn start_server(lang: &str) -> Result<u16, String> {
         let _ = child.wait();
         return Err(format!("Cannot write whisper server PID: {e}"));
     }
+    dlog(&format!("start_server spawned port={port} pid={} lang={lang}", child.id()));
     *server = Some((child, port, lang.to_string()));
     Ok(port)
 }
 
-pub fn stop_server() {
+pub fn stop_server(reason: &str) {
     let mut server = SERVER.lock().unwrap_or_else(|poison| poison.into_inner());
     if let Some((mut child, _, _)) = server.take() {
+        dlog(&format!("stop_server reason={reason} pid={}", child.id()));
         let _ = child.kill();
         let _ = child.wait();
+    } else {
+        dlog(&format!("stop_server reason={reason} no stored child"));
     }
     let _ = fs::remove_file(whisper_dir().join("server.pid"));
 }
@@ -338,6 +401,8 @@ fn server_log_tail(log: &str) -> String {
 }
 
 pub async fn wait_ready(port: u16) -> Result<(), String> {
+    let started = Instant::now();
+    let result = async {
     let client = reqwest::Client::builder()
         .no_proxy()
         .timeout(Duration::from_secs(2))
@@ -376,18 +441,28 @@ pub async fn wait_ready(port: u16) -> Result<(), String> {
         }
         tokio::time::sleep(Duration::from_millis(250)).await;
     }
+    }.await;
+    match &result {
+        Ok(()) => dlog(&format!("wait_ready port={port} ready after {} ms", started.elapsed().as_millis())),
+        Err(message) => dlog(&format!("wait_ready port={port} failed after {} ms: {message}", started.elapsed().as_millis())),
+    }
+    result
 }
 
-pub async fn transcribe(port: u16, wav: Vec<u8>, lang: &str, prompt: &str) -> Result<String, String> {
+pub async fn transcribe(kind: &str, port: u16, wav: Vec<u8>, lang: &str, prompt: &str) -> Result<String, String> {
+    let started = Instant::now();
+    let wav_bytes = wav.len();
+    let audio_seconds = wav_bytes.saturating_sub(44) as f64 / 32_000.0;
+    let result = async {
     let client = reqwest::Client::builder()
         .no_proxy()
         .timeout(Duration::from_secs(120))
         .build()
-        .map_err(|e| format!("Cannot create local client: {e}"))?;
+        .map_err(|e| request_error(kind, "Cannot create local client", e))?;
     let file = reqwest::multipart::Part::bytes(wav)
         .file_name("a.wav")
         .mime_str("audio/wav")
-        .map_err(|e| format!("Cannot prepare WAV upload: {e}"))?;
+        .map_err(|e| request_error(kind, "Cannot prepare WAV upload", e))?;
     let mut form = reqwest::multipart::Form::new()
         .part("file", file)
         .text("language", lang.to_string())
@@ -401,31 +476,68 @@ pub async fn transcribe(port: u16, wav: Vec<u8>, lang: &str, prompt: &str) -> Re
         .multipart(form)
         .send()
         .await
-        .map_err(|e| format!("Whisper request failed: {e}"))?;
+        .map_err(|e| request_error(kind, "Whisper request failed", e))?;
     let status = response.status();
     let body = response
         .text()
         .await
-        .map_err(|e| format!("Cannot read whisper response: {e}"))?;
+        .map_err(|e| request_error(kind, "Cannot read whisper response", e))?;
     if !status.is_success() {
+        let excerpt = body.chars().take(300).collect::<String>();
+        dlog(&format!("transcribe kind={kind} HTTP {status} body_excerpt={excerpt:?}"));
         return Err(format!(
-            "Whisper returned HTTP {status}: {}",
-            body.chars().take(300).collect::<String>()
+            "Whisper returned HTTP {status}: {excerpt}"
         ));
     }
-    let json: serde_json::Value =
-        serde_json::from_str(&body).map_err(|e| format!("Invalid whisper response: {e}"))?;
+    let json: serde_json::Value = serde_json::from_str(&body).map_err(|e| {
+        dlog(&format!("transcribe kind={kind} Invalid whisper response: {e:?}"));
+        format!("Invalid whisper response: {}", error_chain(&e))
+    })?;
     let text = json
         .get("text")
         .and_then(|value| value.as_str())
         .ok_or("Whisper response has no text")?;
     Ok(crate::dictation::clean_transcript(text))
+    }.await;
+    match &result {
+        Ok(text) => dlog(&format!("transcribe kind={kind} port={port} audio_seconds={audio_seconds:.3} wav_bytes={wav_bytes} elapsed_ms={} text_chars={}", started.elapsed().as_millis(), text.chars().count())),
+        Err(message) => {
+            dlog(&format!("transcribe kind={kind} port={port} audio_seconds={audio_seconds:.3} wav_bytes={wav_bytes} elapsed_ms={} error={message}", started.elapsed().as_millis()));
+            dlog(&format!("transcribe kind={kind} server_status={}", server_status()));
+            match fs::read(whisper_dir().join("server.log")) {
+                Ok(log) => {
+                    let log = String::from_utf8_lossy(&log);
+                    let lines: Vec<_> = log.lines().collect();
+                    dlog(&format!("transcribe kind={kind} server.log last 20 lines: {}", lines[lines.len().saturating_sub(20)..].join("\n")));
+                }
+                Err(error) => dlog(&format!("transcribe kind={kind} cannot read server.log: {error}")),
+            }
+        }
+    }
+    result
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{server_exe, server_log_tail};
+    use super::{error_chain, server_exe, server_log_tail};
     use std::fs;
+
+    #[test]
+    fn error_chain_includes_source() {
+        #[derive(Debug)]
+        struct WithSource;
+        impl std::fmt::Display for WithSource {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "request failed")
+            }
+        }
+        impl std::error::Error for WithSource {
+            fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+                Some(&std::fmt::Error)
+            }
+        }
+        assert_eq!(error_chain(&WithSource), "request failed: an error occurred when formatting an argument");
+    }
 
     #[test]
     fn finds_nested_server_executable() {

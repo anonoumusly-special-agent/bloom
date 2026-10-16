@@ -75,7 +75,7 @@ pub async fn dictation_prepare(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub fn dictation_disable() {
-    shutdown();
+    shutdown_reason("disable");
 }
 
 #[tauri::command]
@@ -153,6 +153,7 @@ pub fn toggle() {
         lang,
         prompt,
     });
+    dictation_engine::dlog(&format!("session start lang={} prompt_chars={}", session.lang, session.prompt.chars().count()));
     *slot = Some(session.clone());
     drop(slot);
     let _ = app.emit("dictation-state", json!({"state":"recording"}));
@@ -166,22 +167,26 @@ pub fn toggle() {
 }
 
 pub fn shutdown() {
+    shutdown_reason("shutdown");
+}
+
+fn shutdown_reason(reason: &str) {
     if let Some(session) = lock(&SESSION).as_ref() {
         session.recording.store(false, Ordering::Release);
     }
-    dictation_engine::stop_server();
+    dictation_engine::stop_server(reason);
 }
 
 pub fn pause_for_game() {
-    shutdown();
+    shutdown_reason("pause_for_game");
 }
 
 async fn run(app: AppHandle, session: Arc<Session>, capture: std::thread::JoinHandle<Result<(), String>>) {
+    let mut committed = String::new();
     let result = async {
         dictation_engine::ensure_installed(&app).await?;
         let mut port = dictation_engine::start_server(&session.lang)?;
         dictation_engine::wait_ready(port).await?;
-        let mut committed = String::new();
         while session.recording.load(Ordering::Acquire) {
             tokio::time::sleep(Duration::from_secs(1)).await;
             if !session.recording.load(Ordering::Acquire) { break; }
@@ -192,14 +197,14 @@ async fn run(app: AppHandle, session: Arc<Session>, capture: std::thread::JoinHa
                     .unwrap_or(MAX_BLOCK);
                 if dictation::has_speech(&buffer[..cut], SPEECH_RMS) {
                     let text = transcribe_retry(
-                        &mut port, dictation::encode_wav_16k_mono(&buffer[..cut]), &session,
+                        "chunk", &mut port, dictation::encode_wav_16k_mono(&buffer[..cut]), &session,
                     ).await?;
                     append_text(&mut committed, &text);
                 }
                 lock(&session.pending).drain(..cut);
             } else if dictation::has_speech(&buffer, SPEECH_RMS) {
                 if let Ok(partial) = dictation_engine::transcribe(
-                    port, dictation::encode_wav_16k_mono(&dictation::pad_for_whisper(&buffer)), &session.lang, &session.prompt,
+                    "partial", port, dictation::encode_wav_16k_mono(&dictation::pad_for_whisper(&buffer)), &session.lang, &session.prompt,
                 ).await {
                     let mut text = committed.clone();
                     append_text(&mut text, &partial);
@@ -207,7 +212,7 @@ async fn run(app: AppHandle, session: Arc<Session>, capture: std::thread::JoinHa
                 }
             }
         }
-        Ok::<_, String>((port, committed))
+        Ok::<_, String>(port)
     }.await;
 
     session.recording.store(false, Ordering::Release);
@@ -217,40 +222,46 @@ async fn run(app: AppHandle, session: Arc<Session>, capture: std::thread::JoinHa
         Ok(Ok(Err(message))) => Some(message),
         _ => Some("Microphone capture thread failed".to_string()),
     };
+    let mut ok = false;
+    let mut committed_chars = committed.chars().count();
     if let Some(message) = capture_error {
         if message == "Microphone capture thread failed" { emit_error(&app, message); }
         // Ordinary capture errors were emitted at the point of failure.
-    } else if let Ok((mut port, mut committed)) = result {
+    } else if let Ok(mut port) = result {
         let rest = lock(&session.pending).clone();
         let final_result = async {
             if dictation::has_speech(&rest, SPEECH_RMS) {
                 let text = transcribe_retry(
-                    &mut port, dictation::encode_wav_16k_mono(&dictation::pad_for_whisper(&rest)), &session,
+                    "final", &mut port, dictation::encode_wav_16k_mono(&dictation::pad_for_whisper(&rest)), &session,
                 ).await?;
                 append_text(&mut committed, &text);
             }
-            Ok::<_, String>(committed)
+            Ok::<_, String>(())
         }.await;
         match final_result {
-            Ok(text) => finish(&app, &session, text),
+            Ok(()) => {
+                committed_chars = committed.chars().count();
+                ok = finish(&app, &session, committed);
+            }
             Err(message) => emit_error(&app, message),
         }
     } else {
         emit_error(&app, result.err().unwrap_or_default());
     }
+    dictation_engine::dlog(&format!("session end committed_chars={committed_chars} status={}", if ok { "ok" } else { "err" }));
     let mut slot = lock(&SESSION);
     if slot.as_ref().is_some_and(|active| Arc::ptr_eq(active, &session)) {
         *slot = None;
     }
 }
 
-async fn transcribe_retry(port: &mut u16, wav: Vec<u8>, session: &Session) -> Result<String, String> {
-    match dictation_engine::transcribe(*port, wav.clone(), &session.lang, &session.prompt).await {
+async fn transcribe_retry(kind: &str, port: &mut u16, wav: Vec<u8>, session: &Session) -> Result<String, String> {
+    match dictation_engine::transcribe(kind, *port, wav.clone(), &session.lang, &session.prompt).await {
         Ok(text) => Ok(text),
         Err(_) => {
             *port = dictation_engine::start_server(&session.lang)?;
             dictation_engine::wait_ready(*port).await?;
-            dictation_engine::transcribe(*port, wav, &session.lang, &session.prompt).await
+            dictation_engine::transcribe("retry", *port, wav, &session.lang, &session.prompt).await
         }
     }
 }
@@ -262,24 +273,26 @@ fn append_text(committed: &mut String, text: &str) {
     }
 }
 
-fn finish(app: &AppHandle, session: &Session, text: String) {
+fn finish(app: &AppHandle, session: &Session, text: String) -> bool {
     let reps = dictation::parse_replacements(
         &crate::utils::get_setting_str(app, "bloom-dictation-replacements").unwrap_or_default(),
     );
     let text = dictation::clean_transcript(&dictation::apply_replacements(&text, &reps));
     if text.is_empty() {
         let _ = app.emit("dictation-state", json!({"state":"idle"}));
-        return;
+        return true;
     }
     if let Err(message) = paste_text(app, session.target, &format!("{text} ")) {
         emit_error(app, message);
-        return;
+        return false;
     }
     let samples = lock(&session.all).clone();
-    if let Err(message) = save_history(app, &samples, &text, &session.lang) {
+    let saved = save_history(app, &samples, &text, &session.lang);
+    if let Err(message) = &saved {
         emit_error(app, message);
     }
     let _ = app.emit("dictation-state", json!({"state":"idle","text":text}));
+    saved.is_ok()
 }
 
 fn paste_text(app: &AppHandle, target: isize, text: &str) -> Result<(), String> {
