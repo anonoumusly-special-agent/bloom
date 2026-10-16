@@ -179,7 +179,7 @@ pub fn pause_for_game() {
 async fn run(app: AppHandle, session: Arc<Session>, capture: std::thread::JoinHandle<Result<(), String>>) {
     let result = async {
         dictation_engine::ensure_installed(&app).await?;
-        let port = dictation_engine::start_server(&session.lang)?;
+        let mut port = dictation_engine::start_server(&session.lang)?;
         dictation_engine::wait_ready(port).await?;
         let mut committed = String::new();
         while session.recording.load(Ordering::Acquire) {
@@ -191,19 +191,20 @@ async fn run(app: AppHandle, session: Arc<Session>, capture: std::thread::JoinHa
                     .filter(|&cut| cut > 0)
                     .unwrap_or(MAX_BLOCK);
                 if dictation::has_speech(&buffer[..cut], SPEECH_RMS) {
-                    let text = dictation_engine::transcribe(
-                        port, dictation::encode_wav_16k_mono(&buffer[..cut]), &session.lang, &session.prompt,
+                    let text = transcribe_retry(
+                        &mut port, dictation::encode_wav_16k_mono(&buffer[..cut]), &session,
                     ).await?;
                     append_text(&mut committed, &text);
                 }
                 lock(&session.pending).drain(..cut);
             } else if dictation::has_speech(&buffer, SPEECH_RMS) {
-                let partial = dictation_engine::transcribe(
+                if let Ok(partial) = dictation_engine::transcribe(
                     port, dictation::encode_wav_16k_mono(&dictation::pad_for_whisper(&buffer)), &session.lang, &session.prompt,
-                ).await?;
-                let mut text = committed.clone();
-                append_text(&mut text, &partial);
-                let _ = app.emit("dictation-partial", json!({"text":text}));
+                ).await {
+                    let mut text = committed.clone();
+                    append_text(&mut text, &partial);
+                    let _ = app.emit("dictation-partial", json!({"text":text}));
+                }
             }
         }
         Ok::<_, String>((port, committed))
@@ -219,12 +220,12 @@ async fn run(app: AppHandle, session: Arc<Session>, capture: std::thread::JoinHa
     if let Some(message) = capture_error {
         if message == "Microphone capture thread failed" { emit_error(&app, message); }
         // Ordinary capture errors were emitted at the point of failure.
-    } else if let Ok((port, mut committed)) = result {
+    } else if let Ok((mut port, mut committed)) = result {
         let rest = lock(&session.pending).clone();
         let final_result = async {
             if dictation::has_speech(&rest, SPEECH_RMS) {
-                let text = dictation_engine::transcribe(
-                    port, dictation::encode_wav_16k_mono(&dictation::pad_for_whisper(&rest)), &session.lang, &session.prompt,
+                let text = transcribe_retry(
+                    &mut port, dictation::encode_wav_16k_mono(&dictation::pad_for_whisper(&rest)), &session,
                 ).await?;
                 append_text(&mut committed, &text);
             }
@@ -240,6 +241,17 @@ async fn run(app: AppHandle, session: Arc<Session>, capture: std::thread::JoinHa
     let mut slot = lock(&SESSION);
     if slot.as_ref().is_some_and(|active| Arc::ptr_eq(active, &session)) {
         *slot = None;
+    }
+}
+
+async fn transcribe_retry(port: &mut u16, wav: Vec<u8>, session: &Session) -> Result<String, String> {
+    match dictation_engine::transcribe(*port, wav.clone(), &session.lang, &session.prompt).await {
+        Ok(text) => Ok(text),
+        Err(_) => {
+            *port = dictation_engine::start_server(&session.lang)?;
+            dictation_engine::wait_ready(*port).await?;
+            dictation_engine::transcribe(*port, wav, &session.lang, &session.prompt).await
+        }
     }
 }
 

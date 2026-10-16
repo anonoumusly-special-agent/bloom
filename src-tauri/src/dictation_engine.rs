@@ -381,7 +381,7 @@ pub async fn wait_ready(port: u16) -> Result<(), String> {
 pub async fn transcribe(port: u16, wav: Vec<u8>, lang: &str, prompt: &str) -> Result<String, String> {
     let client = reqwest::Client::builder()
         .no_proxy()
-        .timeout(Duration::from_secs(30))
+        .timeout(Duration::from_secs(120))
         .build()
         .map_err(|e| format!("Cannot create local client: {e}"))?;
     let file = reqwest::multipart::Part::bytes(wav)
