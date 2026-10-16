@@ -135,11 +135,11 @@ export default function Launchpad() {
 	}, [filtered, open]);
 
 	const hide = () => {
+		if (!openRef.current) return;
 		openRef.current = false;
 		setOpen(false);
 		setEditing(false);
 		setSearch("");
-		void invoke("hide_launchpad").catch(console.error);
 	};
 
 	const toggleHidden = (path: string) => {
@@ -183,14 +183,19 @@ export default function Launchpad() {
 	};
 
 	return (
-		<AnimatePresence>
+		<AnimatePresence onExitComplete={() => {
+			// Let the empty WebView frame paint before hiding the native window.
+			requestAnimationFrame(() => requestAnimationFrame(() => {
+				if (!openRef.current) void invoke("hide_launchpad").catch(console.error);
+			}));
+		}}>
 			{open && (
 				<motion.main
 					className="launchpad-backdrop"
 					initial={{ opacity: 0 }}
 					animate={{ opacity: 1 }}
 					exit={{ opacity: 0 }}
-					transition={{ duration: 0.16 }}
+					transition={{ duration: 0.18 }}
 					onMouseDown={(event) => {
 						if (event.button !== 0) return;
 						const target = event.target as Element;

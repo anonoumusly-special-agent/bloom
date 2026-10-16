@@ -325,10 +325,12 @@ fn main() {
             if let Some(launchpad_win) = app.get_webview_window("launchpad") {
                 let launchpad_handle = app.handle().clone();
                 launchpad_win.on_window_event(move |event| match event {
-                    tauri::WindowEvent::Focused(false) => hide_launchpad(launchpad_handle.clone()),
+                    tauri::WindowEvent::Focused(false) => {
+                        request_launchpad_hide(launchpad_handle.clone())
+                    }
                     tauri::WindowEvent::CloseRequested { api, .. } => {
                         api.prevent_close();
-                        hide_launchpad(launchpad_handle.clone());
+                        request_launchpad_hide(launchpad_handle.clone());
                     }
                     _ => {}
                 });

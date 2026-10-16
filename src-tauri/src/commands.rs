@@ -1,4 +1,4 @@
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::{AppHandle, Emitter, Manager, Window};
 use windows::core::Interface;
 use windows::Win32::Foundation::{HWND, LPARAM};
@@ -566,16 +566,48 @@ fn toggle_start_menu() {
     });
 }
 
+static LAUNCHPAD_TRANSITION: AtomicU64 = AtomicU64::new(0);
+#[cfg(windows)]
+static LAUNCHPAD_ALPHA_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(windows)]
+fn set_launchpad_alpha(win: &tauri::WebviewWindow, alpha: u8, transition: Option<u64>) -> bool {
+    use windows::Win32::Foundation::COLORREF;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindowLongW, SetLayeredWindowAttributes, SetWindowLongW, GWL_EXSTYLE, LWA_ALPHA,
+        WS_EX_LAYERED,
+    };
+
+    let Ok(hwnd) = win.hwnd() else {
+        return false;
+    };
+    let _guard = LAUNCHPAD_ALPHA_LOCK.lock().unwrap();
+    if transition
+        .is_some_and(|expected| LAUNCHPAD_TRANSITION.load(Ordering::SeqCst) != expected)
+    {
+        return false;
+    }
+    unsafe {
+        let style = GetWindowLongW(hwnd, GWL_EXSTYLE);
+        if style & WS_EX_LAYERED.0 as i32 == 0 {
+            SetWindowLongW(hwnd, GWL_EXSTYLE, style | WS_EX_LAYERED.0 as i32);
+        }
+        let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), alpha, LWA_ALPHA);
+    }
+    true
+}
+
 #[tauri::command]
 pub fn toggle_launchpad(app: AppHandle) {
     let Some(win) = app.get_webview_window("launchpad") else {
         return;
     };
     if win.is_visible().unwrap_or(false) {
-        let _ = win.hide();
-        let _ = app.emit("launchpad-visibility", false);
+        request_launchpad_hide(app);
         return;
     }
+
+    let transition = LAUNCHPAD_TRANSITION.fetch_add(1, Ordering::SeqCst) + 1;
 
     // Use the cursor's monitor; the dock monitor is the fallback when the cursor is unavailable.
     let monitor = win
@@ -596,20 +628,54 @@ pub fn toggle_launchpad(app: AppHandle) {
         }
     };
     place();
+    #[cfg(windows)]
+    set_launchpad_alpha(&win, 0, None);
     if win.show().is_ok() {
         place(); // Windows may ignore the first position change while the window is hidden.
         let _ = win.set_focus();
         if win.is_visible().unwrap_or(false) {
             let _ = app.emit("launchpad-visibility", true);
+            #[cfg(windows)]
+            std::thread::spawn(move || {
+                for step in 1..=12 {
+                    std::thread::sleep(std::time::Duration::from_millis(15));
+                    let progress = step as f32 / 12.0;
+                    let alpha = (255.0 * (1.0 - (1.0 - progress).powi(3))) as u8;
+                    debug_assert!(step < 12 || alpha == 255);
+                    if !set_launchpad_alpha(&win, alpha, Some(transition)) {
+                        break;
+                    }
+                }
+            });
         }
     }
+}
+
+pub fn request_launchpad_hide(app: AppHandle) {
+    if !app
+        .get_webview_window("launchpad")
+        .is_some_and(|win| win.is_visible().unwrap_or(false))
+    {
+        return;
+    }
+    let transition = LAUNCHPAD_TRANSITION.fetch_add(1, Ordering::SeqCst) + 1;
+    let _ = app.emit("launchpad-visibility", false);
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        if LAUNCHPAD_TRANSITION.load(Ordering::SeqCst) == transition {
+            hide_launchpad(app);
+        }
+    });
 }
 
 #[tauri::command]
 pub fn hide_launchpad(app: AppHandle) {
     if let Some(win) = app.get_webview_window("launchpad") {
         if win.is_visible().unwrap_or(false) {
+            LAUNCHPAD_TRANSITION.fetch_add(1, Ordering::SeqCst);
             let _ = win.hide();
+            #[cfg(windows)]
+            set_launchpad_alpha(&win, 0, None);
             let _ = app.emit("launchpad-visibility", false);
         }
     }
