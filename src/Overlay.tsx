@@ -9,6 +9,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { reloadIfMirrorWasStale } from "./hooks/settingsMirror";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { MixerIcon, SpeakerIcon, TrayIcon } from "./icons";
+import { ClaudeSprite } from "./ClaudeSprite";
 import "./Overlay.css";
 import { initTheme } from "./theme";
 
@@ -966,12 +967,8 @@ function OverlayApp() {
 					<motion.div
 						style={{
 							position: "absolute",
-							width: 28,
-							height: 28,
-							borderRadius: "50%",
-							background: "#D97757",
-							border: "2px solid white",
-							boxShadow: "0 0 28px 10px rgba(217,119,87,0.85)"
+							display: "flex",
+							filter: "drop-shadow(0 0 12px rgba(217,119,87,0.7))"
 						}}
 						transformTemplate={(_, transform) =>
 							`translate(-50%, -50%)${transform === "none" ? "" : ` ${transform}`}`
@@ -980,8 +977,7 @@ function OverlayApp() {
 							left: claudeFlyStart.x,
 							top: claudeFlyStart.y,
 							scale: 0,
-							opacity: 0,
-							rotate: 0
+							opacity: 0
 						}}
 						animate={{
 							left: [
@@ -993,8 +989,7 @@ function OverlayApp() {
 							],
 							top: [claudeFlyStart.y, claudeFlyStart.y, claudeFlyStart.y, 18, 18],
 							scale: [0, 1.1, 1, 1, 0.2],
-							opacity: [0, 1, 1, 1, 0],
-							rotate: [0, 0, 0, 360, 540]
+							opacity: [0, 1, 1, 1, 0]
 						}}
 						transition={{
 							duration: 2.4,
@@ -1002,7 +997,9 @@ function OverlayApp() {
 							ease: ["easeOut", "easeInOut", "easeInOut", "linear"]
 						}}
 						onAnimationComplete={finishClaudeFly}
-					/>
+					>
+						<ClaudeSprite mode="fly" size={64} />
+					</motion.div>
 				</div>
 			)}
 			{/* Splash Screen */}
