@@ -15,15 +15,34 @@ body,
 	inset: 0;
 	display: flex;
 	justify-content: center;
-	background: rgba(10, 10, 14, 0.25);
+	overflow: hidden;
+	isolation: isolate;
 	color: var(--bloom-text, white);
 }
 
-.light-mode .launchpad-backdrop {
-	background: rgba(235, 239, 246, 0.25);
+.launchpad-wallpaper {
+	position: fixed;
+	inset: -40px;
+	z-index: 0;
+	pointer-events: none;
+	background-size: cover;
+	background-position: center;
+	filter: blur(40px) saturate(1.2);
 }
 
+.launchpad-tint {
+	position: fixed;
+	inset: 0;
+	z-index: 1;
+	pointer-events: none;
+	background: rgba(16, 16, 20, 0.55);
+}
+
+.launchpad-tint--solid { background: rgba(16, 16, 20, 0.82); }
+
 .launchpad-content {
+	position: relative;
+	z-index: 2;
 	width: min(1060px, calc(100vw - 80px));
 	height: 100%;
 	display: flex;
@@ -68,6 +87,56 @@ body,
 	cursor: pointer;
 }
 .launchpad-edit:focus-visible { outline: 2px solid var(--bloom-accent, #007aff); }
+.launchpad-add { min-width: 42px; font-size: 22px; line-height: 1; }
+
+.launchpad-add-form {
+	display: flex;
+	gap: 8px;
+	margin-top: 12px;
+	padding: 8px;
+	border-radius: 10px;
+	background: rgba(28, 28, 32, 0.92);
+}
+.launchpad-add-form input,
+.launchpad-add-form button {
+	padding: 8px 10px;
+	border: 0;
+	border-radius: 7px;
+	font: inherit;
+	font-size: 13px;
+}
+.launchpad-add-form input { min-width: 0; color: #fff; background: rgba(255, 255, 255, 0.12); }
+.launchpad-add-form button { color: #fff; background: rgba(255, 255, 255, 0.12); cursor: pointer; }
+.launchpad-add-form button:hover { background: rgba(255, 255, 255, 0.2); }
+.launchpad-add-form button:disabled { opacity: 0.5; cursor: default; }
+
+.launchpad-menu {
+	position: fixed;
+	z-index: 3;
+	width: min(210px, calc(100vw - 16px));
+	max-height: calc(100vh - 16px);
+	overflow-y: auto;
+	padding: 4px;
+	border-radius: 10px;
+	background: rgba(28, 28, 32, 0.92);
+	box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
+	backdrop-filter: blur(16px);
+}
+.launchpad-menu button {
+	display: block;
+	width: 100%;
+	padding: 9px 10px;
+	border: 0;
+	border-radius: 6px;
+	background: transparent;
+	color: #fff;
+	font: inherit;
+	font-size: 13px;
+	text-align: left;
+	cursor: pointer;
+}
+.launchpad-menu button:hover,
+.launchpad-menu button:focus-visible { background: rgba(255, 255, 255, 0.14); outline: none; }
 
 .launchpad-apps {
 	width: 100%;
@@ -145,7 +214,7 @@ body,
 	font-weight: 600;
 }
 
-.launchpad-icon img { max-width: 76%; max-height: 76%; object-fit: contain; }
+.launchpad-icon img { width: 72%; height: 72%; object-fit: contain; }
 
 .launchpad-badge {
 	position: absolute;
@@ -169,12 +238,14 @@ body,
 	font-size: 13px;
 	text-shadow: 0 1px 5px rgba(0, 0, 0, 0.25);
 }
+.light-mode .launchpad-name { color: white; }
 
 .launchpad-empty {
 	margin-top: 14vh;
 	text-align: center;
 	color: var(--bloom-text-muted, rgba(255, 255, 255, 0.6));
 }
+.light-mode .launchpad-empty { color: white; }
 
 @media (max-width: 600px) {
 	.launchpad-content { width: calc(100vw - 32px); }

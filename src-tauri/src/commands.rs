@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tauri::{AppHandle, Emitter, Manager, Window};
 use windows::core::Interface;
 use windows::Win32::Foundation::{HWND, LPARAM};
@@ -567,34 +567,33 @@ fn toggle_start_menu() {
 }
 
 static LAUNCHPAD_TRANSITION: AtomicU64 = AtomicU64::new(0);
-#[cfg(windows)]
-static LAUNCHPAD_ALPHA_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+static LAUNCHPAD_HOLD: AtomicBool = AtomicBool::new(false);
 
-#[cfg(windows)]
-fn set_launchpad_alpha(win: &tauri::WebviewWindow, alpha: u8, transition: Option<u64>) -> bool {
-    use windows::Win32::Foundation::COLORREF;
-    use windows::Win32::UI::WindowsAndMessaging::{
-        GetWindowLongW, SetLayeredWindowAttributes, SetWindowLongW, GWL_EXSTYLE, LWA_ALPHA,
-        WS_EX_LAYERED,
-    };
+#[tauri::command]
+pub fn set_launchpad_hold(hold: bool) {
+    LAUNCHPAD_HOLD.store(hold, Ordering::SeqCst);
+}
 
-    let Ok(hwnd) = win.hwnd() else {
-        return false;
-    };
-    let _guard = LAUNCHPAD_ALPHA_LOCK.lock().unwrap();
-    if transition
-        .is_some_and(|expected| LAUNCHPAD_TRANSITION.load(Ordering::SeqCst) != expected)
-    {
-        return false;
-    }
-    unsafe {
-        let style = GetWindowLongW(hwnd, GWL_EXSTYLE);
-        if style & WS_EX_LAYERED.0 as i32 == 0 {
-            SetWindowLongW(hwnd, GWL_EXSTYLE, style | WS_EX_LAYERED.0 as i32);
+fn place_launchpad(app: &AppHandle, win: &tauri::WebviewWindow, after_show: bool) {
+    // Use the cursor's monitor; the dock monitor is the fallback when the cursor is unavailable.
+    let monitor = win
+        .cursor_position()
+        .ok()
+        .and_then(|cursor| win.monitor_from_point(cursor.x, cursor.y).ok().flatten())
+        .or_else(|| {
+            app.get_webview_window("dock")
+                .and_then(|dock| dock.current_monitor().ok().flatten())
+        })
+        .or_else(|| win.primary_monitor().ok().flatten());
+    if let Some(monitor) = monitor {
+        let position = *monitor.position();
+        if after_show && win.outer_position().ok() == Some(position) {
+            return;
         }
-        let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), alpha, LWA_ALPHA);
+        let size = monitor.size();
+        let _ = win.set_position(position);
+        let _ = win.set_size(tauri::PhysicalSize::new(size.width, size.height));
     }
-    true
 }
 
 #[tauri::command]
@@ -608,50 +607,115 @@ pub fn toggle_launchpad(app: AppHandle) {
     }
 
     let transition = LAUNCHPAD_TRANSITION.fetch_add(1, Ordering::SeqCst) + 1;
-
-    // Use the cursor's monitor; the dock monitor is the fallback when the cursor is unavailable.
-    let monitor = win
-        .cursor_position()
-        .ok()
-        .and_then(|cursor| win.monitor_from_point(cursor.x, cursor.y).ok().flatten())
-    .or_else(|| {
-        app.get_webview_window("dock")
-            .and_then(|dock| dock.current_monitor().ok().flatten())
-    })
-    .or_else(|| win.primary_monitor().ok().flatten());
-    let place = || {
-        if let Some(monitor) = &monitor {
-            let pos = monitor.position();
-            let size = monitor.size();
-            let _ = win.set_position(tauri::PhysicalPosition::new(pos.x, pos.y));
-            let _ = win.set_size(tauri::PhysicalSize::new(size.width, size.height));
+    place_launchpad(&app, &win, false);
+    let _ = app.emit_to("launchpad", "launchpad-prepare", transition);
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+        if LAUNCHPAD_TRANSITION.load(Ordering::SeqCst) == transition
+            && !win.is_visible().unwrap_or(false)
+        {
+            show_launchpad_now(app, transition);
         }
+    });
+}
+
+#[tauri::command]
+pub fn show_launchpad_now(app: AppHandle, transition: u64) {
+    if LAUNCHPAD_TRANSITION.load(Ordering::SeqCst) != transition {
+        return;
+    }
+    let Some(win) = app.get_webview_window("launchpad") else {
+        return;
     };
-    place();
-    #[cfg(windows)]
-    set_launchpad_alpha(&win, 0, None);
+    if win.is_visible().unwrap_or(false) {
+        return;
+    }
     if win.show().is_ok() {
-        place(); // Windows may ignore the first position change while the window is hidden.
+        place_launchpad(&app, &win, true);
         let _ = win.set_focus();
         if win.is_visible().unwrap_or(false) {
             let _ = app.emit("launchpad-visibility", true);
-            #[cfg(windows)]
-            std::thread::spawn(move || {
-                for step in 1..=12 {
-                    std::thread::sleep(std::time::Duration::from_millis(15));
-                    let progress = step as f32 / 12.0;
-                    let alpha = (255.0 * (1.0 - (1.0 - progress).powi(3))) as u8;
-                    debug_assert!(step < 12 || alpha == 255);
-                    if !set_launchpad_alpha(&win, alpha, Some(transition)) {
-                        break;
-                    }
-                }
-            });
         }
     }
 }
 
+#[cfg(windows)]
+static WALLPAPER_CACHE: std::sync::Mutex<
+    Option<(std::path::PathBuf, std::time::SystemTime, String)>,
+> = std::sync::Mutex::new(None);
+
+fn wallpaper_mime(path: &std::path::Path) -> &'static str {
+    match path.extension().and_then(|extension| extension.to_str()) {
+        Some(extension) if extension.eq_ignore_ascii_case("png") => "png",
+        Some(extension) if extension.eq_ignore_ascii_case("bmp") => "bmp",
+        Some(extension) if extension.eq_ignore_ascii_case("webp") => "webp",
+        _ => "jpeg",
+    }
+}
+
+#[tauri::command]
+pub fn get_wallpaper() -> Option<String> {
+    #[cfg(windows)]
+    {
+        use base64::Engine as _;
+        use windows::Win32::UI::WindowsAndMessaging::{
+            SystemParametersInfoW, SPI_GETDESKWALLPAPER, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
+        };
+
+        let mut buffer = vec![0u16; 32768];
+        unsafe {
+            SystemParametersInfoW(
+                SPI_GETDESKWALLPAPER,
+                buffer.len() as u32,
+                Some(buffer.as_mut_ptr().cast()),
+                SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
+            )
+            .ok()?;
+        }
+        let end = buffer.iter().position(|&character| character == 0)?;
+        if end == 0 {
+            return None;
+        }
+        let path = std::path::PathBuf::from(String::from_utf16(&buffer[..end]).ok()?);
+        let modified = std::fs::metadata(&path).ok()?.modified().ok()?;
+        if let Ok(cache) = WALLPAPER_CACHE.lock() {
+            if let Some((cached_path, cached_modified, url)) = cache.as_ref() {
+                if cached_path == &path && cached_modified == &modified {
+                    return Some(url.clone());
+                }
+            }
+        }
+        let bytes = std::fs::read(&path).ok()?;
+        let url = format!(
+            "data:image/{};base64,{}",
+            wallpaper_mime(&path),
+            base64::engine::general_purpose::STANDARD.encode(bytes)
+        );
+        if let Ok(mut cache) = WALLPAPER_CACHE.lock() {
+            *cache = Some((path, modified, url.clone()));
+        }
+        Some(url)
+    }
+    #[cfg(not(windows))]
+    {
+        None
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn wallpaper_mime_follows_extension() {
+    assert_eq!(wallpaper_mime(std::path::Path::new("wallpaper.PNG")), "png");
+    assert_eq!(wallpaper_mime(std::path::Path::new("wallpaper.bmp")), "bmp");
+    assert_eq!(wallpaper_mime(std::path::Path::new("wallpaper.webp")), "webp");
+    assert_eq!(wallpaper_mime(std::path::Path::new("wallpaper.jpg")), "jpeg");
+    assert_eq!(wallpaper_mime(std::path::Path::new("wallpaper")), "jpeg");
+}
+
 pub fn request_launchpad_hide(app: AppHandle) {
+    if LAUNCHPAD_HOLD.load(Ordering::SeqCst) {
+        return;
+    }
     if !app
         .get_webview_window("launchpad")
         .is_some_and(|win| win.is_visible().unwrap_or(false))
@@ -662,7 +726,9 @@ pub fn request_launchpad_hide(app: AppHandle) {
     let _ = app.emit("launchpad-visibility", false);
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-        if LAUNCHPAD_TRANSITION.load(Ordering::SeqCst) == transition {
+        if !LAUNCHPAD_HOLD.load(Ordering::SeqCst)
+            && LAUNCHPAD_TRANSITION.load(Ordering::SeqCst) == transition
+        {
             hide_launchpad(app);
         }
     });
@@ -674,8 +740,6 @@ pub fn hide_launchpad(app: AppHandle) {
         if win.is_visible().unwrap_or(false) {
             LAUNCHPAD_TRANSITION.fetch_add(1, Ordering::SeqCst);
             let _ = win.hide();
-            #[cfg(windows)]
-            set_launchpad_alpha(&win, 0, None);
             let _ = app.emit("launchpad-visibility", false);
         }
     }
@@ -737,22 +801,29 @@ fn power_action_rejects_unknown_action() {
 }
 
 #[tauri::command]
-pub async fn open_app(app: AppHandle, app_name: String) {
+pub async fn open_app(
+    app: AppHandle,
+    app_name: String,
+    admin: Option<bool>,
+) -> Result<(), String> {
+    let admin = admin.unwrap_or(false);
     if app_name == "start" {
         if get_setting_str(&app, "bloom-start-action").as_deref() == Some("windows") {
             toggle_start_menu();
         } else {
             toggle_launchpad(app);
         }
-        return;
+        return Ok(());
     }
 
-    if is_bloom_launch_target(&app_name, &app.config().identifier) {
+    if !admin && is_bloom_launch_target(&app_name, &app.config().identifier) {
         open_settings_window(app);
-        return;
+        return Ok(());
     }
 
-    tauri::async_runtime::spawn_blocking(move || launch_path(&app_name));
+    tauri::async_runtime::spawn_blocking(move || launch_path(&app_name, admin))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 fn same_windows_path(a: &str, b: &str) -> bool {
@@ -894,7 +965,9 @@ pub async fn launch_new_instance(app_path: String, app_name: Option<String>) {
             return;
         }
         let target = pwa_launch_target(&app_path, app_name.as_deref()).unwrap_or(app_path);
-        launch_path(&target);
+        if let Err(error) = launch_path(&target, false) {
+            eprintln!("{error}");
+        }
     });
 }
 
@@ -924,11 +997,14 @@ fn is_pwa_shortcut_for(app: &AppInfo, name: &str, host_exe: &str) -> bool {
 }
 
 /// Opens a file path, shortcut, or shell application id through the shell.
-fn launch_path(path: &str) {
+fn launch_path(path: &str, admin: bool) -> Result<(), String> {
     unsafe {
         use windows::Win32::UI::Shell::ShellExecuteW;
         use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
         let wide_open: Vec<u16> = "open".encode_utf16().chain(std::iter::once(0)).collect();
+        let wide_runas: Vec<u16> = "runas".encode_utf16().chain(std::iter::once(0)).collect();
+        let elevated = admin && !is_aumid_path(path);
+        let verb = if elevated { &wide_runas } else { &wide_open };
 
         // Shortcuts and shell app ids must be launched through the shell itself so
         // that arguments (Chrome/Edge PWAs) and package identities (Store apps) survive.
@@ -945,7 +1021,7 @@ fn launch_path(path: &str) {
             let wide_target: Vec<u16> = target.encode_utf16().chain(std::iter::once(0)).collect();
             let res = ShellExecuteW(
                 None,
-                windows::core::PCWSTR(wide_open.as_ptr()),
+                windows::core::PCWSTR(verb.as_ptr()),
                 windows::core::PCWSTR(wide_target.as_ptr()),
                 None,
                 None,
@@ -955,13 +1031,16 @@ fn launch_path(path: &str) {
                 "launch_path target={target:?} method=ShellExecuteW shell result={}",
                 res.0 as isize
             ));
-            if res.0 as usize <= 32 {
-                eprintln!("Failed to open {}: error code {}", target, res.0 as usize);
+            if (res.0 as isize) <= 32 {
+                return Err(format!(
+                    "Failed to open {target}: ShellExecuteW error {}",
+                    res.0 as isize
+                ));
             }
-            return;
+            return Ok(());
         }
 
-        if let Some(uwp_cmd) = crate::commands::get_uwp_launch_cmd(path) {
+        if let Some(uwp_cmd) = (!elevated).then(|| get_uwp_launch_cmd(path)).flatten() {
             let wide_cmd: Vec<u16> = uwp_cmd.encode_utf16().chain(std::iter::once(0)).collect();
 
             let res = ShellExecuteW(
@@ -984,7 +1063,7 @@ fn launch_path(path: &str) {
                     uwp_cmd, res.0 as usize
                 );
             } else {
-                return;
+                return Ok(());
             }
         }
 
@@ -1033,11 +1112,9 @@ fn launch_path(path: &str) {
             .encode_utf16()
             .chain(std::iter::once(0))
             .collect();
-        let wide_open: Vec<u16> = "open".encode_utf16().chain(std::iter::once(0)).collect();
-
         let res = ShellExecuteW(
             None,
-            windows::core::PCWSTR(wide_open.as_ptr()),
+            windows::core::PCWSTR(verb.as_ptr()),
             windows::core::PCWSTR(wide_path.as_ptr()),
             None,
             None,
@@ -1049,12 +1126,13 @@ fn launch_path(path: &str) {
             res.0 as isize
         ));
 
-        if res.0 as usize <= 32 {
-            eprintln!(
-                "Failed to open app {}: error code {}",
-                final_path, res.0 as usize
-            );
+        if (res.0 as isize) <= 32 {
+            return Err(format!(
+                "Failed to open {final_path}: ShellExecuteW error {}",
+                res.0 as isize
+            ));
         }
+        Ok(())
     }
 }
 
@@ -1366,22 +1444,14 @@ fn is_browser_host_process(path: &str) -> bool {
         || p.contains("firefox.exe")
 }
 
-/// Resolves the icon of a shell application id (Store/UWP/packaged PWA) through
-/// `shell:AppsFolder`. `SHGetFileInfoW` cannot handle these; `IShellItemImageFactory` can.
-fn icon_from_aumid(aumid: &str) -> Option<String> {
+fn icon_from_parsing_name(
+    parsing_name: &str,
+    flags: windows::Win32::UI::Shell::SIIGBF,
+) -> Option<String> {
     unsafe {
         use windows::Win32::Foundation::SIZE;
-        use windows::Win32::UI::Shell::{
-            IShellItemImageFactory, SHCreateItemFromParsingName, SIIGBF, SIIGBF_BIGGERSIZEOK,
-            SIIGBF_ICONONLY,
-        };
+        use windows::Win32::UI::Shell::{IShellItemImageFactory, SHCreateItemFromParsingName};
 
-        let id = aumid.trim().trim_start_matches("shell:AppsFolder\\");
-        if id.is_empty() {
-            return None;
-        }
-
-        let parsing_name = format!("shell:AppsFolder\\{}", id);
         let wide: Vec<u16> = parsing_name
             .encode_utf16()
             .chain(std::iter::once(0))
@@ -1390,10 +1460,7 @@ fn icon_from_aumid(aumid: &str) -> Option<String> {
             SHCreateItemFromParsingName(windows::core::PCWSTR(wide.as_ptr()), None).ok()?;
 
         let size = SIZE { cx: 256, cy: 256 };
-        let hbitmap = factory
-            .GetImage(size, SIIGBF(SIIGBF_ICONONLY.0 | SIIGBF_BIGGERSIZEOK.0))
-            .or_else(|_| factory.GetImage(size, SIIGBF_BIGGERSIZEOK))
-            .ok()?;
+        let hbitmap = factory.GetImage(size, flags).ok()?;
         if hbitmap.0.is_null() {
             return None;
         }
@@ -1402,6 +1469,23 @@ fn icon_from_aumid(aumid: &str) -> Option<String> {
         let _ = windows::Win32::Graphics::Gdi::DeleteObject(hbitmap.into());
         result
     }
+}
+
+/// Resolves the icon of a shell application id (Store/UWP/packaged PWA) through
+/// `shell:AppsFolder`. `SHGetFileInfoW` cannot handle these; `IShellItemImageFactory` can.
+fn icon_from_aumid(aumid: &str) -> Option<String> {
+    use windows::Win32::UI::Shell::{SIIGBF, SIIGBF_BIGGERSIZEOK, SIIGBF_ICONONLY};
+
+    let id = aumid.trim().trim_start_matches("shell:AppsFolder\\");
+    if id.is_empty() {
+        return None;
+    }
+    let parsing_name = format!("shell:AppsFolder\\{}", id);
+    icon_from_parsing_name(
+        &parsing_name,
+        SIIGBF(SIIGBF_ICONONLY.0 | SIIGBF_BIGGERSIZEOK.0),
+    )
+    .or_else(|| icon_from_parsing_name(&parsing_name, SIIGBF_BIGGERSIZEOK))
 }
 
 /// Derives the package family name (`Name_PublisherId`) from a WindowsApps exe path.
@@ -1751,6 +1835,7 @@ fn image_size_score(path: &std::path::Path) -> u64 {
 }
 
 static LAST_ICON_SAVE_REQUEST: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
+const ICON_CACHE_FILE: &str = "icons_cache_v2.json";
 
 pub fn schedule_icon_cache_save(app: AppHandle) {
     let now = crate::utils::get_now_ms();
@@ -1761,7 +1846,7 @@ pub fn schedule_icon_cache_save(app: AppHandle) {
         let last = LAST_ICON_SAVE_REQUEST.load(Ordering::Relaxed);
         if now == last || crate::utils::get_now_ms() - last >= 950 {
             if let Ok(dir) = app.path().app_config_dir() {
-                let cache_path = dir.join("icons_cache.json");
+                let cache_path = dir.join(ICON_CACHE_FILE);
                 if let Some(c) = crate::state::ICON_CACHE.get() {
                     let snapshot = if let Ok(lock) = c.lock() {
                         serde_json::to_string(&*lock).unwrap_or_default()
@@ -1788,7 +1873,7 @@ pub async fn get_app_icon(
     hwnd: Option<isize>,
 ) -> Result<Option<String>, String> {
     let cache_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
-    let cache_path = cache_dir.join("icons_cache.json");
+    let cache_path = cache_dir.join(ICON_CACHE_FILE);
     let cache_key = get_cache_key(&path, name.as_deref());
 
     // Strategy 0: Check for custom icon first
@@ -1949,15 +2034,29 @@ pub async fn get_app_icon(
     }
 
     // Strategy 4: Extract icon from file path
+    let use_shell_image = hwnd.is_none();
     let path_clone = path.clone();
     let ck_clone = cache_key.clone();
     let file_icon = tauri::async_runtime::spawn_blocking(move || unsafe {
         use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_MULTITHREADED};
-        use windows::Win32::UI::Shell::{SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON};
+        use windows::Win32::UI::Shell::{
+            SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON, SIIGBF,
+            SIIGBF_BIGGERSIZEOK, SIIGBF_ICONONLY,
+        };
         use windows::Win32::UI::WindowsAndMessaging::DestroyIcon;
 
-        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        let com_initialized = CoInitializeEx(None, COINIT_MULTITHREADED).is_ok();
         let result = {
+            // The shell resolves shortcut targets and can return their full-size icons.
+            let mut icon_data = if use_shell_image && std::path::Path::new(&path_clone).exists() {
+                icon_from_parsing_name(
+                    &path_clone,
+                    SIIGBF(SIIGBF_ICONONLY.0 | SIIGBF_BIGGERSIZEOK.0),
+                )
+            } else {
+                None
+            };
+
             let ((actual_path, args), is_lnk) = if path_clone.to_lowercase().ends_with(".lnk") {
                 (
                     resolve_shortcut(&path_clone).unwrap_or((path_clone.clone(), String::new())),
@@ -1968,11 +2067,10 @@ pub async fn get_app_icon(
             };
 
             // A shortcut can carry its own icon file (Firefox web apps, user edits).
-            let mut icon_data = if is_lnk {
-                get_shortcut_icon_location(&path_clone).and_then(|p| image_file_to_base64(&p))
-            } else {
-                None
-            };
+            if icon_data.is_none() && is_lnk {
+                icon_data = get_shortcut_icon_location(&path_clone)
+                    .and_then(|p| image_file_to_base64(&p));
+            }
 
             // Chrome/Edge/Brave installed web apps keep the site icon in the browser profile.
             if icon_data.is_none() {
@@ -2015,7 +2113,9 @@ pub async fn get_app_icon(
             }
             icon_data
         };
-        CoUninitialize();
+        if com_initialized {
+            CoUninitialize();
+        }
         result
     })
     .await
@@ -2097,7 +2197,7 @@ pub async fn load_pinned_apps(app: AppHandle) -> Vec<AppInfo> {
 #[tauri::command]
 pub async fn clear_icon_cache(app: AppHandle) -> Result<(), String> {
     let cache_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
-    let cache_path = cache_dir.join("icons_cache.json");
+    let cache_path = cache_dir.join(ICON_CACHE_FILE);
     let _ = std::fs::remove_file(&cache_path);
     if let Some(c) = ICON_CACHE.get() {
         if let Ok(mut lock) = c.lock() {
